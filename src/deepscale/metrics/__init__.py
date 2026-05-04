@@ -1,1 +1,1 @@
-from . import rpss, roc, pearson, rmse
+from . import rpss, roc, pearson, rmse, heidke
