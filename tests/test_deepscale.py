@@ -294,6 +294,69 @@ def test_rmse_alias_registered():
 
 
 # ===================================================================
+# 6c. HSS metric
+# ===================================================================
+
+def test_hss_perfect(synthetic_obs):
+    from deepscale.metrics.heidke import HSSMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    t33, t67 = _cpt_boundaries(synthetic_obs.values)
+    obs_vals = synthetic_obs.values
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for c in range(3):
+        fcst[:, c, :, :] = (obs_cat == c).astype(float)
+
+    forecast = xr.DataArray(
+        fcst,
+        dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+
+    m = HSSMetric()
+    score = m.compute(forecast, synthetic_obs)
+    np.testing.assert_allclose(score, 1.0, atol=1e-10)
+
+
+def test_hss_no_skill(synthetic_obs):
+    from deepscale.metrics.heidke import HSSMetric
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    fcst[:, 1, :, :] = 1.0  # always pick "normal" (middle tercile)
+
+    forecast = xr.DataArray(
+        fcst,
+        dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+
+    m = HSSMetric()
+    score = m.compute(forecast, synthetic_obs)
+    assert abs(score) < 0.1
+
+
+def test_hss_alias_registered():
+    from deepscale.registry import get_metric
+    from deepscale.metrics.heidke import HSSMetric
+    assert get_metric("heidke_skill_score") is HSSMetric
+    assert get_metric("hss") is HSSMetric
+
+
+# ===================================================================
 # 7. Cross-validation
 # ===================================================================
 

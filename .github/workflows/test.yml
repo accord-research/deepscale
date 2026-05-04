@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: |
+          uv run pytest tests/ \
+            --ignore=tests/test_agreement.py \
+            --ignore=tests/test_corrdiff.py \
+            --ignore=tests/test_corrdiff_integration.py \
+            -m "not gpu and not integration" \
+            -v
