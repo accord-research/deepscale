@@ -8,9 +8,11 @@ def register_method(name):
         return cls
     return decorator
 
-def register_metric(name):
+def register_metric(name, *, aliases=()):
     def decorator(cls):
         _METRICS[name] = cls
+        for alias in aliases:
+            _METRICS[alias] = cls
         return cls
     return decorator
 

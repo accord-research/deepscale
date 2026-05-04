@@ -265,6 +265,35 @@ def test_pearson_zero():
 
 
 # ===================================================================
+# 6b. RMSE metric
+# ===================================================================
+
+def test_rmse_perfect(synthetic_obs):
+    from deepscale.metrics.rmse import RMSEMetric
+    m = RMSEMetric()
+    score = m.compute(synthetic_obs, synthetic_obs)
+    np.testing.assert_allclose(score, 0.0, atol=1e-10)
+
+
+def test_rmse_constant_mean(synthetic_obs):
+    from deepscale.metrics.rmse import RMSEMetric
+    # Forecast = climatological mean broadcast back across years.
+    # RMSE per grid cell should equal the population std (ddof=0) per grid cell.
+    forecast = synthetic_obs.mean("year") + 0 * synthetic_obs  # broadcast trick
+    m = RMSEMetric()
+    spatial_rmse = m.compute(forecast, synthetic_obs, spatial=True)
+    expected = synthetic_obs.std("year")  # xarray default is ddof=0
+    np.testing.assert_allclose(spatial_rmse.values, expected.values, atol=1e-10)
+
+
+def test_rmse_alias_registered():
+    from deepscale.registry import get_metric
+    from deepscale.metrics.rmse import RMSEMetric
+    assert get_metric("root_mean_squared_error") is RMSEMetric
+    assert get_metric("rmse") is RMSEMetric
+
+
+# ===================================================================
 # 7. Cross-validation
 # ===================================================================
 

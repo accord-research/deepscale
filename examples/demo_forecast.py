@@ -72,12 +72,12 @@ def era5_to_obs(ds, target_months, years):
 def seasonal_to_gcm(ds, years):
     """C3S seasonal-monthly Dataset -> GCM DataArray (year, member, lat, lon)."""
     da = ds["temp"]
-    keep = {"lat", "lon", "time", "member", "year", "forecast_reference_time"}
+    keep = {"lat", "lon", "time", "member", "year", "forecast_reference_time", "init_time"}
     for dim in list(da.dims):
         if dim not in keep:
             da = da.mean(dim=dim)
 
-    for dim in ("forecast_reference_time", "time"):
+    for dim in ("forecast_reference_time", "init_time", "time"):
         if dim in da.dims:
             da = da.assign_coords(year=(dim, da[dim].dt.year.values))
             da = da.swap_dims({dim: "year"}).drop_vars(dim)
@@ -146,7 +146,8 @@ def main() -> None:
     print(f"    P(above normal):  {an:.1%}")
 
     print("\n[5] LOYO cross-validated skill (this may take a minute)...")
-    cv_forecasts = []
+    cv_forecasts_terc = []
+    cv_forecasts_det = []
     for train_years, _test_year in loyo(HINDCAST_YEARS):
         fitted = deepscale.optimize(
             gcm.sel(year=train_years),
@@ -155,16 +156,25 @@ def main() -> None:
             verbose=VERBOSE,
             progress=PROGRESS,
         )
-        cv_forecasts.append(to_tercile(fitted.forecast, obs.sel(year=train_years)))
+        cv_forecasts_terc.append(to_tercile(fitted.forecast, obs.sel(year=train_years)))
+        cv_forecasts_det.append(fitted.forecast)
 
-    cv_fcst = xr.concat(cv_forecasts, dim="year")
+    cv_fcst = xr.concat(cv_forecasts_terc, dim="year")
     cv_fcst["year"] = HINDCAST_YEARS
+    cv_fcst_det = xr.concat(cv_forecasts_det, dim="year")
+    cv_fcst_det["year"] = HINDCAST_YEARS
+
+    # Probabilistic metrics need the tercile forecast; RMSE needs the raw deterministic
+    # ensemble (same units as obs). Two skill calls keep each metric on the right input.
     report = deepscale.skill(cv_fcst, obs, metrics=["rpss", "pearson_r"], spatial=True)
+    report_det = deepscale.skill(cv_fcst_det, obs, metrics=["rmse"], spatial=True)
 
     print("\n" + "=" * 60)
     print(f"  SKILL REPORT - ECMWF SEAS5 ({best.method.upper()})")
     print("=" * 60)
     for metric, value in report.scores.items():
+        print(f"    {metric:20s}: {value:+.3f}")
+    for metric, value in report_det.scores.items():
         print(f"    {metric:20s}: {value:+.3f}")
 
     try:
@@ -175,8 +185,8 @@ def main() -> None:
         from matplotlib.colors import TwoSlopeNorm
         from matplotlib.gridspec import GridSpec
 
-        fig = plt.figure(figsize=(18, 14))
-        gs = GridSpec(3, 3, figure=fig, hspace=0.35, wspace=0.30)
+        fig = plt.figure(figsize=(18, 18))
+        gs = GridSpec(4, 3, figure=fig, hspace=0.35, wspace=0.30)
 
         tercile_titles = ["P(Below Normal)", "P(Normal)", "P(Above Normal)"]
         for i, title in enumerate(tercile_titles):
@@ -212,7 +222,16 @@ def main() -> None:
         ax_clim.set_xlabel("Lon")
         plt.colorbar(image, ax=ax_clim, fraction=0.046, label="deg C")
 
-        ax_ts = fig.add_subplot(gs[2, :2])
+        if "rmse" in report_det.spatial:
+            ax_rmse = fig.add_subplot(gs[2, :])
+            rmse_da = report_det.spatial["rmse"]
+            image = ax_rmse.pcolormesh(rmse_da.lon, rmse_da.lat, rmse_da.values, cmap="viridis")
+            ax_rmse.set_title("Spatial RMSE (LOYO CV) — deg C, lower is better", fontsize=11)
+            ax_rmse.set_xlabel("Lon")
+            ax_rmse.set_ylabel("Lat")
+            plt.colorbar(image, ax=ax_rmse, fraction=0.025, label="RMSE (deg C)")
+
+        ax_ts = fig.add_subplot(gs[3, :2])
         obs_ts = obs.mean(["lat", "lon"])
         gcm_ts_mean = gcm.mean(["member", "lat", "lon"])
         gcm_member_ts = gcm.mean(["lat", "lon"])
@@ -235,8 +254,9 @@ def main() -> None:
         ax_ts.legend(fontsize=9, loc="best")
         ax_ts.grid(alpha=0.3)
 
-        ax_bar = fig.add_subplot(gs[2, 2])
-        metrics_to_plot = {k: v for k, v in report.scores.items() if isinstance(v, (int, float))}
+        ax_bar = fig.add_subplot(gs[3, 2])
+        # RMSE excluded from the signed-skill bar chart — different scale (deg C vs ±1).
+        metrics_to_plot = {k: v for k, v in report.scores.items() if isinstance(v, (int, float)) and k != "rmse"}
         names = list(metrics_to_plot.keys())
         vals = list(metrics_to_plot.values())
         colors = ["#d9534f" if v < 0 else "#5cb85c" for v in vals]
