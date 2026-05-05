@@ -166,7 +166,15 @@ def main() -> None:
 
     # Probabilistic metrics need the tercile forecast; RMSE needs the raw deterministic
     # ensemble (same units as obs). Two skill calls keep each metric on the right input.
-    report = deepscale.skill(cv_fcst, obs, metrics=["rpss", "pearson_r", "hss", "spearman"], spatial=True)
+    report = deepscale.skill(
+        cv_fcst, obs,
+        metrics=[
+            "rpss", "pearson_r", "spearman", "hss",
+            "2afc", "roc_area_below_normal", "roc_area_above_normal",
+            "reliability",
+        ],
+        spatial=True,
+    )
     report_det = deepscale.skill(cv_fcst_det, obs, metrics=["rmse"], spatial=True)
 
     print("\n" + "=" * 60)
@@ -187,6 +195,7 @@ def main() -> None:
         from deepscale.plotting import (
             plot_domains, plot_deterministic_forecast,
             plot_skill_maps, plot_tercile_forecast,
+            plot_reliability_diagram,
         )
 
         OUTPUT_DIR = PLOT_PATH.parent
@@ -244,10 +253,20 @@ def main() -> None:
         plt.close(fig)
         print(f"    Saved -> {out}")
 
-        # 5. Time-series + bar chart summary (no plotting helper covers this layout)
+        # 4b. Reliability diagram
+        fig = plot_reliability_diagram(
+            cv_fcst, obs,
+            title=f"Reliability ({best.method.upper()}, {TARGET})",
+        )
+        out = OUTPUT_DIR / "demo_reliability.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
+        # 5. Time-series + bar charts summary (no plotting helper covers this layout)
         from matplotlib.gridspec import GridSpec
-        fig = plt.figure(figsize=(14, 5), constrained_layout=True)
-        gs = GridSpec(1, 3, figure=fig, wspace=0.3)
+        fig = plt.figure(figsize=(18, 5), constrained_layout=True)
+        gs = GridSpec(1, 4, figure=fig, wspace=0.3)
 
         ax_ts = fig.add_subplot(gs[0, :2])
         obs_ts = obs.mean(["lat", "lon"])
@@ -268,10 +287,16 @@ def main() -> None:
         ax_ts.grid(alpha=0.3)
 
         ax_bar = fig.add_subplot(gs[0, 2])
-        # RMSE excluded from the signed-skill bar chart — different scale (deg C vs ±1).
+        # Signed skill chart: only keep metrics on the [-1, 1] scale.
+        # RMSE has a different scale (deg C); reliability is calibration error;
+        # 2afc + roc_area_* are [0, 1] discrimination skills (next chart).
+        signed_excludes = (
+            "rmse", "root_mean_squared_error", "reliability",
+            "2afc", "roc_area_below_normal", "roc_area_above_normal",
+        )
         metrics_to_plot = {
             k: v for k, v in report.scores.items()
-            if isinstance(v, (int, float)) and k not in ("rmse", "root_mean_squared_error")
+            if isinstance(v, (int, float)) and k not in signed_excludes
         }
         names = list(metrics_to_plot.keys())
         vals = list(metrics_to_plot.values())
@@ -285,6 +310,27 @@ def main() -> None:
             x_offset = 0.02 if value >= 0 else -0.06
             ax_bar.text(value + x_offset, bar.get_y() + bar.get_height() / 2,
                         f"{value:+.3f}", va="center", fontsize=10)
+
+        # Second bar chart: [0, 1] discrimination skills with 0.5 = no skill.
+        ax_bar2 = fig.add_subplot(gs[0, 3])
+        disc_metrics = {
+            k: v for k, v in report.scores.items()
+            if k in ("2afc", "roc_area_below_normal", "roc_area_above_normal")
+        }
+        if disc_metrics:
+            names2 = list(disc_metrics.keys())
+            vals2 = list(disc_metrics.values())
+            colors2 = ["#5cb85c" if v >= 0.5 else "#d9534f" for v in vals2]
+            bars2 = ax_bar2.barh(names2, vals2, color=colors2, edgecolor="gray", height=0.5)
+            ax_bar2.axvline(0.5, color="black", linewidth=0.8, linestyle="--",
+                            label="No skill (0.5)")
+            ax_bar2.set_xlabel("Score")
+            ax_bar2.set_title("Discrimination Skill")
+            ax_bar2.set_xlim(0, 1)
+            for bar, value in zip(bars2, vals2):
+                ax_bar2.text(value + 0.02, bar.get_y() + bar.get_height() / 2,
+                             f"{value:.3f}", va="center", fontsize=9)
+            ax_bar2.legend(loc="lower right", fontsize=8)
 
         fig.suptitle(
             f"East Africa {TARGET} - Seasonal Temperature Forecast & Skill\n"

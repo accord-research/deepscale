@@ -17,6 +17,7 @@ from .forecasts import (
     plot_exceedance_probability,
     plot_flex_pdf,
 )
+from .reliability import plot_reliability_diagram
 
 __all__ = [
     "plot_domains",
@@ -25,4 +26,5 @@ __all__ = [
     "plot_deterministic_forecast",
     "plot_exceedance_probability",
     "plot_flex_pdf",
+    "plot_reliability_diagram",
 ]
