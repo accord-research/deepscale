@@ -357,6 +357,63 @@ def test_hss_alias_registered():
 
 
 # ===================================================================
+# 6d. Spearman metric
+# ===================================================================
+
+def test_spearman_perfect(synthetic_obs):
+    from deepscale.metrics.spearman import SpearmanMetric
+    m = SpearmanMetric()
+    score = m.compute(synthetic_obs, synthetic_obs)
+    np.testing.assert_allclose(score, 1.0, atol=0.001)
+
+
+def test_spearman_monotonic_nonlinear():
+    from deepscale.metrics.spearman import SpearmanMetric
+    from deepscale.metrics.pearson import PearsonMetric
+
+    # Centered Gaussian data: x ~ N(0, 1). Cubing strongly distorts linearity
+    # while preserving rank order. Theoretical Pearson(X, X^3) for X ~ N(0,1)
+    # is 3/sqrt(15) ≈ 0.775; gap from Spearman = 1.0 is ~0.22.
+    np.random.seed(7)
+    n_year, n_lat, n_lon = 100, 5, 5
+    x = np.random.randn(n_year, n_lat, n_lon)
+    obs = xr.DataArray(
+        x,
+        dims=["year", "lat", "lon"],
+        coords={
+            "year": np.arange(n_year),
+            "lat": np.linspace(-1, 1, n_lat),
+            "lon": np.linspace(0, 1, n_lon),
+        },
+    )
+    forecast = obs ** 3  # monotonic but strongly nonlinear over [-3, 3]
+
+    spearman = SpearmanMetric().compute(forecast, obs)
+    pearson = PearsonMetric().compute(forecast, obs)
+
+    assert spearman > 0.999, f"expected spearman ≈ 1, got {spearman}"
+    assert pearson < spearman - 0.01, (
+        f"expected pearson strictly below spearman by >= 0.01; "
+        f"got pearson={pearson}, spearman={spearman}"
+    )
+
+
+def test_spearman_zero():
+    from deepscale.metrics.spearman import SpearmanMetric
+    np.random.seed(123)
+    years = np.arange(100)
+    lat = np.linspace(-1, 1, 5)
+    lon = np.linspace(0, 1, 5)
+    a = xr.DataArray(np.random.randn(100, 5, 5), dims=["year", "lat", "lon"],
+                     coords={"year": years, "lat": lat, "lon": lon})
+    b = xr.DataArray(np.random.randn(100, 5, 5), dims=["year", "lat", "lon"],
+                     coords={"year": years, "lat": lat, "lon": lon})
+    m = SpearmanMetric()
+    score = m.compute(a, b)
+    assert abs(score) < 0.2
+
+
+# ===================================================================
 # 7. Cross-validation
 # ===================================================================
 
