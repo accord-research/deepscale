@@ -166,7 +166,7 @@ def main() -> None:
 
     # Probabilistic metrics need the tercile forecast; RMSE needs the raw deterministic
     # ensemble (same units as obs). Two skill calls keep each metric on the right input.
-    report = deepscale.skill(cv_fcst, obs, metrics=["rpss", "pearson_r", "hss"], spatial=True)
+    report = deepscale.skill(cv_fcst, obs, metrics=["rpss", "pearson_r", "hss", "spearman"], spatial=True)
     report_det = deepscale.skill(cv_fcst_det, obs, metrics=["rmse"], spatial=True)
 
     print("\n" + "=" * 60)
