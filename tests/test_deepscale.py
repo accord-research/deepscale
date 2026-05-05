@@ -765,3 +765,155 @@ def test_plot_flex_pdf_smoke():
     )
     assert fig is not None
     plt.close(fig)
+
+
+# ===================================================================
+# 16. 2AFC metric
+# ===================================================================
+
+def test_2afc_perfect(synthetic_obs):
+    from deepscale.metrics.two_afc import TwoAFCMetric
+    score = TwoAFCMetric().compute(synthetic_obs, synthetic_obs)
+    np.testing.assert_allclose(score, 1.0, atol=0.001)
+
+
+def test_2afc_uniform_random():
+    from deepscale.metrics.two_afc import TwoAFCMetric
+    np.random.seed(42)
+    n_year, n_lat, n_lon = 100, 5, 5
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    forecast = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                            dims=["year", "lat", "lon"], coords=coords)
+    score = TwoAFCMetric().compute(forecast, obs)
+    assert abs(score - 0.5) < 0.05
+
+
+def test_2afc_constant_forecast_no_skill(synthetic_obs):
+    from deepscale.metrics.two_afc import TwoAFCMetric
+    forecast = synthetic_obs * 0 + 1.0  # all-constant
+    score = TwoAFCMetric().compute(forecast, synthetic_obs)
+    # Half-credit-for-ties: a constant forecast scores 0.5 (matches the
+    # issue's "constant forecast (no skill) ≈ 0.5" criterion).
+    np.testing.assert_allclose(score, 0.5, atol=1e-12)
+
+
+# ===================================================================
+# 17. Per-tercile ROC variants
+# ===================================================================
+
+def test_roc_area_below_normal_matches_roc_bn(synthetic_obs, perfect_tercile_forecast):
+    from deepscale.registry import get_metric
+    full = get_metric("roc")().compute(perfect_tercile_forecast, synthetic_obs)
+    bn = get_metric("roc_area_below_normal")().compute(perfect_tercile_forecast, synthetic_obs)
+    np.testing.assert_allclose(bn, full["roc_bn"], atol=1e-12)
+
+
+def test_roc_area_above_normal_matches_roc_an(synthetic_obs, perfect_tercile_forecast):
+    from deepscale.registry import get_metric
+    full = get_metric("roc")().compute(perfect_tercile_forecast, synthetic_obs)
+    an = get_metric("roc_area_above_normal")().compute(perfect_tercile_forecast, synthetic_obs)
+    np.testing.assert_allclose(an, full["roc_an"], atol=1e-12)
+
+
+# ===================================================================
+# 18. Reliability metric + diagram
+# ===================================================================
+
+def test_reliability_climatology(synthetic_obs):
+    from deepscale.metrics.reliability import ReliabilityMetric
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0  # uniform climatology
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    rel = ReliabilityMetric().compute(forecast, synthetic_obs)
+    assert rel < 0.05, f"expected near-perfect calibration, got {rel}"
+
+
+def test_reliability_overconfident(synthetic_obs):
+    from deepscale.metrics.reliability import ReliabilityMetric
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    fcst[:, 0, :, :] = 1.0  # always confident BN
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    rel = ReliabilityMetric().compute(forecast, synthetic_obs)
+    assert rel > 0.2, f"expected badly calibrated forecast, got {rel}"
+
+
+def test_plot_reliability_diagram_smoke(synthetic_obs):
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.reliability import plot_reliability_diagram
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    fig = plot_reliability_diagram(forecast, synthetic_obs)
+    assert fig is not None
+    plt.close(fig)
+
+
+# ===================================================================
+# 19. Metric presets (#52)
+# ===================================================================
+
+def test_skill_preset_svslrf(synthetic_obs, perfect_tercile_forecast):
+    import deepscale
+    report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="svslrf")
+    assert "rpss" in report.scores
+    assert "roc_bn" in report.scores  # from "roc" metric (returns dict)
+    assert "roc_nn" in report.scores
+    assert "roc_an" in report.scores
+    assert "reliability" in report.scores
+
+
+def test_skill_preset_all_dedupes_aliases(synthetic_obs, perfect_tercile_forecast):
+    import deepscale
+    report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
+    rmse_keys = [k for k in report.scores if k in ("rmse", "root_mean_squared_error")]
+    assert len(rmse_keys) == 1, f"expected one RMSE key, got {rmse_keys}"
+    hss_keys = [k for k in report.scores if k in ("hss", "heidke_skill_score")]
+    assert len(hss_keys) == 1, f"expected one HSS key, got {hss_keys}"
+
+
+def test_skill_bare_string_single_metric(synthetic_obs, perfect_tercile_forecast):
+    import deepscale
+    report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="rpss")
+    assert "rpss" in report.scores
+
+
+def test_skill_list_metrics_still_works(synthetic_obs, perfect_tercile_forecast):
+    import deepscale
+    report = deepscale.skill(
+        perfect_tercile_forecast, synthetic_obs,
+        metrics=["rpss", "pearson_r"],
+    )
+    assert set(report.scores.keys()) >= {"rpss", "pearson_r"}

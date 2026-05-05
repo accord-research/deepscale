@@ -24,7 +24,12 @@ class HSSMetric(MetricBase):
         t33, t67 = _cpt_boundaries(obs_vals)
         obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
 
-        fcst_cat = forecast.argmax("tercile").values  # (year, lat, lon)
+        # Ensure forecast axes match obs (year, *spatial_dims) before argmax,
+        # otherwise fixtures with shape (tercile, lat, lon, year) produce a
+        # transposed fcst_cat that won't broadcast against obs_cat.
+        spatial_dims = [d for d in obs.dims if d != "year"]
+        fcst = forecast.transpose("year", "tercile", *spatial_dims)
+        fcst_cat = fcst.argmax("tercile").values  # (year, *spatial_dims)
 
         nan_mask = np.isnan(obs_vals) | np.isnan(t33)[None, ...]
 
