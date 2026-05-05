@@ -643,3 +643,125 @@ def test_plugin_metric_contract(climatology_forecast, synthetic_obs):
 
     report = deepscale.skill(climatology_forecast, synthetic_obs, metrics=["always_half"])
     assert report.scores["always_half"] == 0.5
+
+
+# ===================================================================
+# 15. Plotting subpackage
+# ===================================================================
+
+def test_plotting_package_imports():
+    """Package must import cleanly even when matplotlib/cartopy aren't installed."""
+    import deepscale.plotting  # noqa: F401
+
+
+def test_plot_skill_maps_smoke():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.skill import SkillReport
+    from deepscale.plotting.skill import plot_skill_maps
+
+    lat = np.linspace(-5, 5, 6)
+    lon = np.linspace(30, 45, 8)
+    rpss = xr.DataArray(
+        np.random.RandomState(0).uniform(-1, 1, (6, 8)),
+        dims=["lat", "lon"], coords={"lat": lat, "lon": lon},
+    )
+    rmse = xr.DataArray(
+        np.random.RandomState(1).uniform(0, 2, (6, 8)),
+        dims=["lat", "lon"], coords={"lat": lat, "lon": lon},
+    )
+    report = SkillReport(scores={"rpss": float(rpss.mean()), "rmse": float(rmse.mean())},
+                         spatial={"rpss": rpss, "rmse": rmse})
+
+    fig = plot_skill_maps(report, ["rpss", "rmse"], ncols=2)
+
+    assert fig is not None
+    assert len(fig.axes) >= 2
+    plt.close(fig)
+
+
+def test_plot_domains_smoke():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.domains import plot_domains
+
+    # predictand: East Africa, predictor: tropical Pacific (antimeridian-spanning)
+    fig = plot_domains(
+        predictor_extent=(-20, 20, 120, -60),     # lon_w > lon_e — crosses dateline
+        predictand_extent=(-12, 15, 22, 52),
+    )
+
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_tercile_forecast_smoke():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_tercile_forecast
+
+    n_lat, n_lon = 4, 5
+    probs = np.zeros((3, n_lat, n_lon))
+    probs[0, :, :] = 0.15
+    probs[1, :, :] = 0.25
+    probs[2, :, :] = 0.60
+    pr_fcst = xr.DataArray(
+        probs,
+        dims=["tercile", "lat", "lon"],
+        coords={
+            "tercile": [0, 1, 2],
+            "lat": np.linspace(-5, 5, n_lat),
+            "lon": np.linspace(30, 45, n_lon),
+        },
+    )
+    fig = plot_tercile_forecast(pr_fcst)
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_deterministic_forecast_smoke():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_deterministic_forecast
+
+    n_lat, n_lon = 4, 5
+    da = xr.DataArray(
+        np.random.RandomState(2).randn(n_lat, n_lon),
+        dims=["lat", "lon"],
+        coords={"lat": np.linspace(-5, 5, n_lat), "lon": np.linspace(30, 45, n_lon)},
+    )
+    fig = plot_deterministic_forecast(da, title="test")
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_exceedance_probability_smoke():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_exceedance_probability
+
+    n_lat, n_lon = 4, 5
+    da = xr.DataArray(
+        np.random.RandomState(3).uniform(0, 1, (n_lat, n_lon)),
+        dims=["lat", "lon"],
+        coords={"lat": np.linspace(-5, 5, n_lat), "lon": np.linspace(30, 45, n_lon)},
+    )
+    fig = plot_exceedance_probability(da, threshold=100.0)
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_flex_pdf_smoke():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_flex_pdf
+
+    fig = plot_flex_pdf(
+        fcst_mu=2.5, fcst_scale=1.2,
+        climo_mu=2.0, climo_scale=1.5,
+        location=(35.0, 0.0),
+    )
+    assert fig is not None
+    plt.close(fig)

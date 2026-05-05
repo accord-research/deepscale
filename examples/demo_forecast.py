@@ -177,61 +177,79 @@ def main() -> None:
     for metric, value in report_det.scores.items():
         print(f"    {metric:20s}: {value:+.3f}")
 
+    # ---- Plots --------------------------------------------------------------
     try:
         import matplotlib
-
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
-        from matplotlib.colors import TwoSlopeNorm
+
+        from deepscale.skill import SkillReport
+        from deepscale.plotting import (
+            plot_domains, plot_deterministic_forecast,
+            plot_skill_maps, plot_tercile_forecast,
+        )
+
+        OUTPUT_DIR = PLOT_PATH.parent
+        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+        # 1. Domain map
+        fig = plot_domains(
+            predictor_extent=tuple(REGION),
+            predictand_extent=tuple(REGION),
+            title=f"Domain ({TARGET})",
+        )
+        out = OUTPUT_DIR / "demo_domains.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
+        # 2. Climatology
+        fig = plot_deterministic_forecast(
+            obs.mean("year"),
+            title="Obs Climatology (ERA5 MAM mean)",
+            cmap="inferno",
+        )
+        out = OUTPUT_DIR / "demo_climatology.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
+        # 3. Skill maps grid (combine probabilistic + deterministic reports)
+        combined_report = SkillReport(
+            scores={**report.scores, **report_det.scores},
+            spatial={**report.spatial, **report_det.spatial},
+        )
+        fig = plot_skill_maps(
+            combined_report,
+            ["rpss", "pearson_r", "spearman", "hss", "rmse"],
+            ncols=3,
+        )
+        out = OUTPUT_DIR / "demo_skill_maps.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
+        # 4. Dominant-tercile probability map
+        # tercile_forecast may have a year dim; squeeze to (tercile, lat, lon)
+        tcst = tercile_forecast
+        if "year" in tcst.dims:
+            tcst = tcst.isel(year=-1)
+        fig = plot_tercile_forecast(
+            tcst,
+            title=f"Dominant Tercile ({best.method.upper()}, {TARGET})",
+            variable_kind="temp",
+        )
+        out = OUTPUT_DIR / "demo_tercile.png"
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
+        # 5. Time-series + bar chart summary (no plotting helper covers this layout)
         from matplotlib.gridspec import GridSpec
+        fig = plt.figure(figsize=(14, 5), constrained_layout=True)
+        gs = GridSpec(1, 3, figure=fig, wspace=0.3)
 
-        fig = plt.figure(figsize=(18, 18))
-        gs = GridSpec(4, 3, figure=fig, hspace=0.35, wspace=0.30)
-
-        tercile_titles = ["P(Below Normal)", "P(Normal)", "P(Above Normal)"]
-        for i, title in enumerate(tercile_titles):
-            ax = fig.add_subplot(gs[0, i], aspect="equal")
-            data = tercile_forecast.sel(tercile=i)
-            image = ax.pcolormesh(obs.lon, obs.lat, data.values, vmin=0, vmax=1, cmap="RdYlGn")
-            ax.set_title(title, fontsize=11)
-            ax.set_xlabel("Lon")
-            if i == 0:
-                ax.set_ylabel("Lat")
-            plt.colorbar(image, ax=ax, fraction=0.046, label="Probability")
-
-        skill_panels = []
-        if "rpss" in report.spatial:
-            skill_panels.append(("RPSS", report.spatial["rpss"], "RdBu", (-1, 1)))
-        if "pearson_r" in report.spatial:
-            skill_panels.append(("Pearson r", report.spatial["pearson_r"], "RdBu", (-1, 1)))
-
-        for j, (label, spatial_da, cmap, (vlo, vhi)) in enumerate(skill_panels):
-            ax = fig.add_subplot(gs[1, j], aspect="equal")
-            norm = TwoSlopeNorm(vmin=vlo, vcenter=0, vmax=vhi)
-            image = ax.pcolormesh(spatial_da.lon, spatial_da.lat, spatial_da.values, cmap=cmap, norm=norm)
-            ax.set_title(f"Spatial {label} (LOYO CV)", fontsize=11)
-            ax.set_xlabel("Lon")
-            if j == 0:
-                ax.set_ylabel("Lat")
-            plt.colorbar(image, ax=ax, fraction=0.046, label=label)
-
-        ax_clim = fig.add_subplot(gs[1, 2], aspect="equal")
-        obs_clim = obs.mean("year")
-        image = ax_clim.pcolormesh(obs.lon, obs.lat, obs_clim.values, cmap="inferno")
-        ax_clim.set_title("Obs Climatology (ERA5 MAM mean)", fontsize=11)
-        ax_clim.set_xlabel("Lon")
-        plt.colorbar(image, ax=ax_clim, fraction=0.046, label="deg C")
-
-        if "rmse" in report_det.spatial:
-            ax_rmse = fig.add_subplot(gs[2, :])
-            rmse_da = report_det.spatial["rmse"]
-            image = ax_rmse.pcolormesh(rmse_da.lon, rmse_da.lat, rmse_da.values, cmap="viridis")
-            ax_rmse.set_title("Spatial RMSE (LOYO CV) — deg C, lower is better", fontsize=11)
-            ax_rmse.set_xlabel("Lon")
-            ax_rmse.set_ylabel("Lat")
-            plt.colorbar(image, ax=ax_rmse, fraction=0.025, label="RMSE (deg C)")
-
-        ax_ts = fig.add_subplot(gs[3, :2])
+        ax_ts = fig.add_subplot(gs[0, :2])
         obs_ts = obs.mean(["lat", "lon"])
         gcm_ts_mean = gcm.mean(["member", "lat", "lon"])
         gcm_member_ts = gcm.mean(["lat", "lon"])
@@ -239,48 +257,47 @@ def main() -> None:
         member_max = gcm_member_ts.max("member").values
 
         ax_ts.plot(HINDCAST_YEARS, obs_ts.values, "k.-", label="ERA5 obs", linewidth=1.5)
-        ax_ts.plot(
-            HINDCAST_YEARS,
-            gcm_ts_mean.values,
-            "b.-",
-            label="ECMWF ens mean",
-            linewidth=1.5,
-            alpha=0.8,
-        )
-        ax_ts.fill_between(HINDCAST_YEARS, member_min, member_max, alpha=0.15, color="blue", label="Ensemble spread")
+        ax_ts.plot(HINDCAST_YEARS, gcm_ts_mean.values, "b.-",
+                   label="ECMWF ens mean", linewidth=1.5, alpha=0.8)
+        ax_ts.fill_between(HINDCAST_YEARS, member_min, member_max,
+                            alpha=0.15, color="blue", label="Ensemble spread")
         ax_ts.set_xlabel("Year")
         ax_ts.set_ylabel("Temperature (deg C)")
-        ax_ts.set_title("Area-Mean MAM Temperature: Obs vs GCM Hindcast", fontsize=11)
+        ax_ts.set_title("Area-Mean MAM Temperature: Obs vs GCM Hindcast")
         ax_ts.legend(fontsize=9, loc="best")
         ax_ts.grid(alpha=0.3)
 
-        ax_bar = fig.add_subplot(gs[3, 2])
+        ax_bar = fig.add_subplot(gs[0, 2])
         # RMSE excluded from the signed-skill bar chart — different scale (deg C vs ±1).
-        metrics_to_plot = {k: v for k, v in report.scores.items() if isinstance(v, (int, float)) and k != "rmse"}
+        metrics_to_plot = {
+            k: v for k, v in report.scores.items()
+            if isinstance(v, (int, float)) and k not in ("rmse", "root_mean_squared_error")
+        }
         names = list(metrics_to_plot.keys())
         vals = list(metrics_to_plot.values())
         colors = ["#d9534f" if v < 0 else "#5cb85c" for v in vals]
         bars = ax_bar.barh(names, vals, color=colors, edgecolor="gray", height=0.5)
         ax_bar.axvline(0, color="black", linewidth=0.8)
         ax_bar.set_xlabel("Score")
-        ax_bar.set_title("Domain-Mean Skill Scores", fontsize=11)
+        ax_bar.set_title("Domain-Mean Skill Scores")
         ax_bar.set_xlim(-0.5, 0.5)
         for bar, value in zip(bars, vals):
             x_offset = 0.02 if value >= 0 else -0.06
-            ax_bar.text(value + x_offset, bar.get_y() + bar.get_height() / 2, f"{value:+.3f}", va="center", fontsize=10)
+            ax_bar.text(value + x_offset, bar.get_y() + bar.get_height() / 2,
+                        f"{value:+.3f}", va="center", fontsize=10)
 
         fig.suptitle(
             f"East Africa {TARGET} - Seasonal Temperature Forecast & Skill\n"
             f"ECMWF SEAS5 {best.method.upper()} | {HINDCAST_YEARS[0]}-{HINDCAST_YEARS[-1]} | Real CDS Data",
-            fontsize=14,
-            fontweight="bold",
-            y=0.98,
+            fontsize=12, fontweight="bold",
         )
-        PLOT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        plt.savefig(PLOT_PATH, dpi=150, bbox_inches="tight")
-        print(f"\n    Saved -> {PLOT_PATH}")
+        out = PLOT_PATH  # demo_forecast.png — preserves existing entry point
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"    Saved -> {out}")
+
     except ImportError:
-        print("\n    (matplotlib not installed - skipping plot)")
+        print("\n    (plotting deps not installed - skipping plots; install with `pip install deepscale[plotting]`)")
 
     print("\n" + "=" * 60)
     print("  DONE")
