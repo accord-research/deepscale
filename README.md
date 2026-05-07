@@ -61,7 +61,7 @@ report = deepscale.skill(forecast, obs, metrics=["rpss", "roc"])
 - ensemble strategy: uniform weights
 - outputs: continuous and tercile forecasts
 
-v0 proves the framework. Most growth should come from adding methods/metrics, not rewriting orchestration logic. See [TODO.md](TODO.md) for the full roadmap, including PyCPT-equivalent capabilities to replicate.
+v0 proves the framework. Most growth should come from adding methods/metrics, not rewriting orchestration logic. The full roadmap — including PyCPT parity, ML methods, and spec-compliance work — is tracked on [GitHub Issues](https://github.com/accord-research/deepscale/issues?q=is%3Aopen+label%3Av1-roadmap) under the `v1-roadmap` label.
 
 ## Example workflow
 

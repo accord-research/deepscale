@@ -114,8 +114,10 @@ class CCAMethod(MethodBase):
 
         self.n_train_ = n_years
         self.x_eof_modes_ = nxe
-        self.obs_shape_ = obs.isel(year=0).shape
-        self.obs_coords_ = {"lat": obs.lat, "lon": obs.lon}
+        self.predictor_shape_ = gcm_mean.isel(year=0).shape
+        self.predictor_coords_ = {"lat": gcm_mean.lat, "lon": gcm_mean.lon}
+        self.predictand_shape_ = obs.isel(year=0).shape
+        self.predictand_coords_ = {"lat": obs.lat, "lon": obs.lon}
 
     def leverage(self, forecast):
         """CPT-compatible leverage (cca.F95 L602, L618-620).
@@ -172,12 +174,12 @@ class CCAMethod(MethodBase):
 
             y_full = np.full(len(self.y_valid_), np.nan)
             y_full[self.y_valid_] = y_pred_valid
-            results.append(y_full.reshape(self.obs_shape_))
+            results.append(y_full.reshape(self.predictand_shape_))
 
         return xr.DataArray(
             np.stack(results),
             dims=["member", "lat", "lon"],
-            coords={"member": forecast.member, **self.obs_coords_},
+            coords={"member": forecast.member, **self.predictand_coords_},
         )
 
 

@@ -161,6 +161,214 @@ def test_cca_auto_eof_modes(synthetic_gcm_hindcast, synthetic_obs):
 
 
 # ===================================================================
+# 3c. CCA dual-grid predictor support (§1.1)
+# ===================================================================
+
+def test_cca_stores_predictor_coords(synthetic_gcm_hindcast, synthetic_obs):
+    """Predictor lat/lon must be stored separately from predictand."""
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert hasattr(m, "predictor_coords_")
+    np.testing.assert_array_equal(
+        m.predictor_coords_["lat"].values, synthetic_gcm_hindcast.lat.values
+    )
+    np.testing.assert_array_equal(
+        m.predictor_coords_["lon"].values, synthetic_gcm_hindcast.lon.values
+    )
+
+
+def test_cca_stores_predictand_coords(synthetic_gcm_hindcast, synthetic_obs):
+    """Predictand lat/lon must be stored separately from predictor."""
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert hasattr(m, "predictand_coords_")
+    np.testing.assert_array_equal(
+        m.predictand_coords_["lat"].values, synthetic_obs.lat.values
+    )
+    np.testing.assert_array_equal(
+        m.predictand_coords_["lon"].values, synthetic_obs.lon.values
+    )
+
+
+def test_cca_stores_distinct_predictor_and_predictand_shapes(synthetic_gcm_hindcast, synthetic_obs):
+    """When grids differ, the two shapes must be stored independently."""
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert m.predictor_shape_ == (
+        len(synthetic_gcm_hindcast.lat),
+        len(synthetic_gcm_hindcast.lon),
+    )
+    assert m.predictand_shape_ == (
+        len(synthetic_obs.lat),
+        len(synthetic_obs.lon),
+    )
+    assert m.predictor_shape_ != m.predictand_shape_
+
+
+def test_cca_eofx_reconstructs_to_predictor_grid(synthetic_gcm_hindcast, synthetic_obs):
+    """eofx_ + x_valid_ + predictor_shape_ must reconstruct a spatial map (§3.2 contract)."""
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2, x_eof_modes=3, y_eof_modes=3)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    n_predictor_pts = int(np.prod(m.predictor_shape_))
+    assert m.x_valid_.shape == (n_predictor_pts,)
+    mode0 = np.full(n_predictor_pts, np.nan)
+    mode0[m.x_valid_] = m.eofx_[:, 0]
+    spatial = mode0.reshape(m.predictor_shape_)
+    assert spatial.shape == m.predictor_shape_
+
+
+def test_cca_eofy_reconstructs_to_predictand_grid(synthetic_gcm_hindcast, synthetic_obs):
+    """eofy_ + y_valid_ + predictand_shape_ must reconstruct a spatial map (§3.2 contract)."""
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2, x_eof_modes=3, y_eof_modes=3)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    n_predictand_pts = int(np.prod(m.predictand_shape_))
+    assert m.y_valid_.shape == (n_predictand_pts,)
+    mode0 = np.full(n_predictand_pts, np.nan)
+    mode0[m.y_valid_] = m.eofy_[:, 0]
+    spatial = mode0.reshape(m.predictand_shape_)
+    assert spatial.shape == m.predictand_shape_
+
+
+def test_cca_predicts_on_predictand_grid_when_grids_differ(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs
+):
+    """Predict output must use the predictand grid, not the predictor grid."""
+    from deepscale.methods.cca import CCAMethod
+    assert synthetic_gcm_hindcast.shape[2:] != synthetic_obs.shape[1:]
+    m = CCAMethod(n_modes=2)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    np.testing.assert_array_equal(result.lat.values, synthetic_obs.lat.values)
+    np.testing.assert_array_equal(result.lon.values, synthetic_obs.lon.values)
+
+
+def _build_dual_grid_fixture(seed=0, n_years=25, signal_amp=2.0, noise_amp=0.3):
+    """Synthetic SST→precip dual-grid fixture.
+
+    Predictor: 'tropical Pacific' SST on a coarse 6x8 grid (lat ±10°, lon 180-240°).
+    Predictand: 'East Africa' precip on a fine 12x12 grid (lat -5 to 15°, lon 30-50°).
+    A shared yearly time signal modulates a dipole on each grid (different patterns),
+    so CCA should recover the link.
+    """
+    rng = np.random.default_rng(seed)
+    years = np.arange(2000, 2000 + n_years)
+    members = np.arange(3)
+
+    # Predictor grid (geographically disjoint from predictand)
+    p_lat = np.linspace(-10, 10, 6)
+    p_lon = np.linspace(180, 240, 8)
+    # Predictand grid
+    o_lat = np.linspace(-5, 15, 12)
+    o_lon = np.linspace(30, 50, 12)
+
+    # Shared time signal
+    t = np.arange(n_years)
+    time_signal = np.sin(2 * np.pi * t / 5.0)
+
+    # Planted spatial patterns (different on each grid)
+    p_pattern = np.outer(np.sin(np.deg2rad(p_lat) * 3), np.cos(np.deg2rad(p_lon) * 2))
+    o_pattern = np.outer(np.cos(np.deg2rad(o_lat) * 2), np.sin(np.deg2rad(o_lon) * 4))
+
+    p_signal = signal_amp * time_signal[:, None, None] * p_pattern[None, :, :]
+    o_signal = signal_amp * time_signal[:, None, None] * o_pattern[None, :, :]
+
+    p_noise = rng.standard_normal((n_years, len(members), len(p_lat), len(p_lon))) * noise_amp
+    o_noise = rng.standard_normal((n_years, len(o_lat), len(o_lon))) * noise_amp
+
+    predictor = xr.DataArray(
+        p_signal[:, None, :, :] + p_noise + 290.0,
+        dims=["year", "member", "lat", "lon"],
+        coords={"year": years, "member": members, "lat": p_lat, "lon": p_lon},
+    )
+    predictand = xr.DataArray(
+        o_signal + o_noise + 5.0,
+        dims=["year", "lat", "lon"],
+        coords={"year": years, "lat": o_lat, "lon": o_lon},
+    )
+    return predictor, predictand, o_pattern
+
+
+def test_cca_dual_grid_integration_end_to_end():
+    """Integration: full dual-grid call via the public downscale() API."""
+    import deepscale
+    predictor, predictand, _ = _build_dual_grid_fixture()
+    forecast = predictor.isel(year=-1, drop=True)
+    train_predictor = predictor.isel(year=slice(None, -1))
+    train_predictand = predictand.isel(year=slice(None, -1))
+
+    result = deepscale.downscale(
+        train_predictor, train_predictand, method="cca", forecast=forecast
+    )
+    assert result.dims == ("member", "lat", "lon")
+    assert len(result.lat) == len(predictand.lat)
+    assert len(result.lon) == len(predictand.lon)
+    np.testing.assert_array_equal(result.lat.values, predictand.lat.values)
+    np.testing.assert_array_equal(result.lon.values, predictand.lon.values)
+    assert not np.all(np.isnan(result.values))
+
+
+def test_cca_dual_grid_recovers_planted_signal():
+    """Integration: CCA on dual grids recovers a known planted relationship."""
+    from deepscale.methods.cca import CCAMethod
+    predictor, predictand, o_pattern = _build_dual_grid_fixture()
+
+    train_predictor = predictor.isel(year=slice(None, -1))
+    train_predictand = predictand.isel(year=slice(None, -1))
+    forecast = predictor.isel(year=-1, drop=True)
+    truth = predictand.isel(year=-1)
+
+    m = CCAMethod(n_modes=2)
+    m.fit(train_predictor, train_predictand)
+
+    # CCA should pick up the shared time signal — first canonical correlation high.
+    assert m.mu_[0] > 0.7, f"first canonical correlation too low: {m.mu_[0]:.3f}"
+
+    # Predict held-out year and check predicted anomaly pattern correlates
+    # with the truth anomaly pattern.
+    pred = m.predict(forecast).mean("member")
+    pred_anom = (pred - pred.mean()).values.ravel()
+    truth_anom = (truth - truth.mean()).values.ravel()
+    corr = np.corrcoef(pred_anom, truth_anom)[0, 1]
+    assert corr > 0.5, f"predicted vs truth pattern correlation too low: {corr:.3f}"
+
+
+def test_cca_same_grid_case_still_works():
+    """Regression guard: predictor==predictand grid is just a special case."""
+    from deepscale.methods.cca import CCAMethod
+    rng = np.random.default_rng(0)
+    years = np.arange(2000, 2010)
+    members = np.arange(2)
+    lat = np.linspace(-4, 4, 6)
+    lon = np.linspace(30, 38, 6)
+    signal = np.sin(np.arange(len(years)) * 0.5)[:, None, None]
+    spatial = np.outer(np.sin(lat), np.cos(lon))[None, :, :]
+    gcm = xr.DataArray(
+        signal[:, None, :, :] * spatial[:, None, :, :]
+        + rng.standard_normal((len(years), len(members), len(lat), len(lon))) * 0.3
+        + 5.0,
+        dims=["year", "member", "lat", "lon"],
+        coords={"year": years, "member": members, "lat": lat, "lon": lon},
+    )
+    obs = xr.DataArray(
+        signal * spatial + rng.standard_normal((len(years), len(lat), len(lon))) * 0.2 + 5.0,
+        dims=["year", "lat", "lon"],
+        coords={"year": years, "lat": lat, "lon": lon},
+    )
+    forecast = gcm.isel(year=-1, drop=True)
+    m = CCAMethod(n_modes=2)
+    m.fit(gcm, obs)
+    result = m.predict(forecast)
+    assert result.shape == (len(members), len(lat), len(lon))
+    assert m.predictor_shape_ == m.predictand_shape_ == (len(lat), len(lon))
+    assert not np.any(np.isnan(result.values))
+
+
+# ===================================================================
 # 4. RPSS metric
 # ===================================================================
 
@@ -564,6 +772,40 @@ def test_downscale_tercile_output(synthetic_gcm_hindcast, synthetic_obs):
     np.testing.assert_allclose(sums.values, 1.0, atol=1e-10)
 
 
+def test_downscale_accepts_predictor_hindcast_keyword(synthetic_gcm_hindcast, synthetic_obs):
+    """The new canonical kwarg works without warnings."""
+    import warnings
+    import deepscale
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        result = deepscale.downscale(
+            predictor_hindcast=synthetic_gcm_hindcast, obs=synthetic_obs, method="bcsd",
+        )
+    assert result.dims == ("member", "lat", "lon")
+
+
+def test_downscale_legacy_gcm_keyword_emits_deprecation(synthetic_gcm_hindcast, synthetic_obs):
+    """The old `gcm=` kwarg still works but emits a DeprecationWarning."""
+    import deepscale
+    with pytest.warns(DeprecationWarning, match="gcm"):
+        result = deepscale.downscale(
+            gcm=synthetic_gcm_hindcast, obs=synthetic_obs, method="bcsd",
+        )
+    assert result.dims == ("member", "lat", "lon")
+
+
+def test_downscale_rejects_both_names(synthetic_gcm_hindcast, synthetic_obs):
+    """Passing both `predictor_hindcast` and `gcm` is an explicit error."""
+    import deepscale
+    with pytest.raises(TypeError, match="both"):
+        deepscale.downscale(
+            predictor_hindcast=synthetic_gcm_hindcast,
+            gcm=synthetic_gcm_hindcast,
+            obs=synthetic_obs,
+            method="bcsd",
+        )
+
+
 # ===================================================================
 # 12. optimize()
 # ===================================================================
@@ -878,6 +1120,207 @@ def test_plot_reliability_diagram_smoke(synthetic_obs):
     )
     fig = plot_reliability_diagram(forecast, synthetic_obs)
     assert fig is not None
+    plt.close(fig)
+
+
+# ===================================================================
+# 18b. EOF / CCA mode plots (§3.2)
+# ===================================================================
+
+def test_apply_sign_convention_flips_negative_dominant_lobe():
+    from deepscale.plotting.modes import _apply_sign_convention
+    arr = np.array([[-3.0, 1.0], [0.5, -0.5]])
+    flipped, sign = _apply_sign_convention(arr)
+    assert sign == -1.0
+    np.testing.assert_array_equal(flipped, -arr)
+    # After flip, the dominant lobe is positive.
+    assert flipped.flat[int(np.nanargmax(np.abs(flipped)))] > 0
+
+
+def test_apply_sign_convention_keeps_positive_dominant_lobe():
+    from deepscale.plotting.modes import _apply_sign_convention
+    arr = np.array([[3.0, -1.0], [0.5, -0.5]])
+    out, sign = _apply_sign_convention(arr)
+    assert sign == 1.0
+    np.testing.assert_array_equal(out, arr)
+
+
+def test_apply_sign_convention_handles_all_nan():
+    from deepscale.plotting.modes import _apply_sign_convention
+    arr = np.full((2, 2), np.nan)
+    out, sign = _apply_sign_convention(arr)
+    assert sign == 1.0
+    assert np.all(np.isnan(out))
+
+
+def _fit_cca_for_mode_plots():
+    """Helper: fit CCAMethod on the dual-grid fixture for plotting tests."""
+    from deepscale.methods.cca import CCAMethod
+    predictor, predictand, _ = _build_dual_grid_fixture()
+    m = CCAMethod(n_modes=3, x_eof_modes=4, y_eof_modes=4)
+    m.fit(predictor, predictand)
+    return m, predictor, predictand
+
+
+def test_plot_eof_modes_predictor_returns_figure():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_eof_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_eof_modes(m, kind="predictor", n_modes=3)
+    assert fig is not None
+    # 3 mode panels (plus colorbars are extra axes)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    assert len(map_axes) == 3
+    plt.close(fig)
+
+
+def test_plot_eof_modes_predictand_returns_figure():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_eof_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_eof_modes(m, kind="predictand", n_modes=2)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    assert len(map_axes) == 2
+    plt.close(fig)
+
+
+def test_plot_eof_modes_invalid_kind_raises():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    from deepscale.plotting.modes import plot_eof_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    with pytest.raises(ValueError, match="kind"):
+        plot_eof_modes(m, kind="bogus")
+
+
+def test_plot_eof_modes_caps_n_modes_at_available():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_eof_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    # Ask for more modes than were fitted; should silently cap.
+    fig = plot_eof_modes(m, kind="predictor", n_modes=99)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    assert len(map_axes) == m.eofx_.shape[1]
+    plt.close(fig)
+
+
+def test_plot_eof_modes_title_includes_variance_fraction():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_eof_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_eof_modes(m, kind="predictor", n_modes=2)
+    titles = [
+        ax.get_title() for ax in fig.axes
+        if hasattr(ax, "coastlines") and ax.get_visible()
+    ]
+    assert all("EOF" in t for t in titles)
+    assert all("var" in t for t in titles)
+    plt.close(fig)
+
+
+def test_plot_cca_modes_returns_paired_grid():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_cca_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_cca_modes(m, n_modes=2)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    # 2 modes x (predictor + predictand) = 4 map panels
+    assert len(map_axes) == 4
+    plt.close(fig)
+
+
+def test_plot_cca_modes_title_includes_canonical_correlation():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_cca_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_cca_modes(m, n_modes=1)
+    titles = [
+        ax.get_title() for ax in fig.axes
+        if hasattr(ax, "coastlines") and ax.get_visible()
+    ]
+    assert any("predictor" in t for t in titles)
+    assert any("predictand" in t for t in titles)
+    assert all("r=" in t for t in titles)
+    plt.close(fig)
+
+
+def test_plot_cca_modes_caps_at_available_modes():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.modes import plot_cca_modes
+    m, _, _ = _fit_cca_for_mode_plots()
+    fig = plot_cca_modes(m, n_modes=99)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    assert len(map_axes) == 2 * m.ncc_
+    plt.close(fig)
+
+
+def test_mode_plots_dual_grid_integration(tmp_path):
+    """Integration: fit CCA on the dual-grid fixture and render both mode plots to disk."""
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    from deepscale.methods.cca import CCAMethod
+    from deepscale.plotting.modes import plot_eof_modes, plot_cca_modes
+
+    predictor, predictand, _ = _build_dual_grid_fixture()
+    m = CCAMethod(n_modes=3, x_eof_modes=4, y_eof_modes=4)
+    m.fit(predictor, predictand)
+
+    eof_path = tmp_path / "eof_predictor.png"
+    cca_path = tmp_path / "cca_modes.png"
+    fig_eof = plot_eof_modes(m, kind="predictor", n_modes=3)
+    fig_eof.savefig(eof_path, dpi=80)
+    plt.close(fig_eof)
+    fig_cca = plot_cca_modes(m, n_modes=2)
+    fig_cca.savefig(cca_path, dpi=80)
+    plt.close(fig_cca)
+
+    # Both files exist and are non-trivially sized (a blank figure is much smaller).
+    assert eof_path.exists() and eof_path.stat().st_size > 5000
+    assert cca_path.exists() and cca_path.stat().st_size > 5000
+
+
+def test_plot_cca_modes_pair_shares_sign_convention():
+    """Predictor and predictand of a CCA pair should be flipped together."""
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    from deepscale.plotting.modes import (
+        plot_cca_modes, _apply_sign_convention, _reconstruct_spatial,
+    )
+    import matplotlib.pyplot as plt
+    m, _, _ = _fit_cca_for_mode_plots()
+
+    # Manually compute what the locked-sign predictor / predictand patterns should be
+    # for mode 0, then check the rendered colour-meshes' raw arrays match.
+    p_raw = _reconstruct_spatial(
+        (m.eofx_ @ m.s_.T)[:, 0], m.x_valid_, m.predictor_shape_
+    )
+    o_raw = _reconstruct_spatial(
+        (m.eofy_ @ m.r_)[:, 0], m.y_valid_, m.predictand_shape_
+    )
+    p_signed, sign = _apply_sign_convention(p_raw)
+    o_signed = o_raw * sign
+
+    fig = plot_cca_modes(m, n_modes=1)
+    map_axes = [ax for ax in fig.axes if hasattr(ax, "coastlines") and ax.get_visible()]
+    p_mesh = map_axes[0].collections[0].get_array().reshape(m.predictor_shape_)
+    o_mesh = map_axes[1].collections[0].get_array().reshape(m.predictand_shape_)
+    np.testing.assert_allclose(np.asarray(p_mesh), p_signed, equal_nan=True)
+    np.testing.assert_allclose(np.asarray(o_mesh), o_signed, equal_nan=True)
     plt.close(fig)
 
 
