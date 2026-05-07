@@ -42,8 +42,11 @@ def optimize(gcm, obs, methods=None, cv="loyo", primary_metric="rpss", **kwargs)
     best_forecast = None
 
     years = list(gcm.year.values)
-    cv_fn = get_cv(cv)
-    _log(verbose, f"optimize start: methods={len(methods)}, cv={cv}, years={len(years)}")
+    # Accept either a registered name or a pre-configured callable, so callers
+    # can pass e.g. `partial(expanding, min_train=4)` for a custom CV scheme.
+    cv_fn = cv if callable(cv) else get_cv(cv)
+    cv_label = cv if isinstance(cv, str) else getattr(cv_fn, "__name__", "callable")
+    _log(verbose, f"optimize start: methods={len(methods)}, cv={cv_label}, years={len(years)}")
 
     for method_name in _iter(methods, "DeepScale methods", enabled=progress):
         _log(verbose, f"scoring method={method_name}")
@@ -59,25 +62,27 @@ def optimize(gcm, obs, methods=None, cv="loyo", primary_metric="rpss", **kwargs)
             m = method_cls(**{k: v for k, v in kwargs.items() if k in _METHOD_PARAMS})
             m.fit(gcm, obs, **kwargs)
 
-        for train_years, test_year in _iter(list(cv_fn(years)), f"{method_name} folds", enabled=progress):
-            gcm_train = gcm.sel(year=train_years)
+        for train_years, test in _iter(list(cv_fn(years)), f"{method_name} folds", enabled=progress):
+            # CV schemes yield either a scalar test year (loyo/expanding) or
+            # a list of consecutive test years (lko/blocked). Normalize.
+            test_years = test if isinstance(test, list) else [test]
             obs_train = obs.sel(year=train_years)
-            gcm_test = gcm.sel(year=test_year)
-            obs_test = obs.sel(year=test_year)
 
             if not is_pretrained:
                 m = method_cls(**{k: v for k, v in kwargs.items() if k in _METHOD_PARAMS})
-                m.fit(gcm_train, obs_train, **kwargs)
+                m.fit(gcm.sel(year=train_years), obs_train, **kwargs)
 
-            pred = m.predict(gcm_test, **kwargs)
-            tercile_pred = to_tercile(pred, obs_train)
-            cv_forecasts.append(tercile_pred)
-            cv_obs_list.append(obs_test)
+            for test_year in test_years:
+                pred = m.predict(gcm.sel(year=test_year), **kwargs)
+                tercile_pred = to_tercile(pred, obs_train).expand_dims(year=[test_year])
+                cv_forecasts.append(tercile_pred)
+                cv_obs_list.append(obs.sel(year=[test_year]))
 
-        cv_fcst = xr.concat(cv_forecasts, dim="year")
-        cv_fcst["year"] = years
-        cv_obs = xr.concat(cv_obs_list, dim="year")
-        cv_obs["year"] = years
+        # Schemes that overlap (e.g. lko sliding) produce multiple predictions
+        # per year; average them into one prediction per year before scoring.
+        # Schemes that don't overlap pass through unchanged.
+        cv_fcst = xr.concat(cv_forecasts, dim="year").groupby("year").mean("year")
+        cv_obs = xr.concat(cv_obs_list, dim="year").groupby("year").first()
 
         report = skill(cv_fcst, cv_obs, metrics=[primary_metric])
         score = report.scores.get(
