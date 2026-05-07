@@ -1,10 +1,36 @@
+"""Tercile-probability conversion for forecasts.
+
+There are two callable surfaces:
+
+- `to_tercile(forecast, obs_climatology, ...)` is the **production-time** path:
+  convert a single-year ensemble forecast into tercile probabilities using
+  thresholds computed from the supplied historical climatology. The caller
+  is responsible for the `obs_climatology` argument; pass only the years
+  you would have known when issuing the forecast.
+
+- `to_tercile_cv(cv_predictions, obs, ...)` is the **scoring** path: convert
+  a year-stacked array of cross-validated predictions into tercile probs
+  with proper held-out discipline (LOO boundaries, LOO PEV, etc).
+
+**Leakage hazard.** Using `to_tercile(year_pred, obs)` to score CV hindcasts
+is a common bug: the tercile boundaries computed from `obs` will include
+the held-out year, inflating apparent skill. For any CV-scoring context,
+prefer `to_tercile_cv()`. The default boundary convention there is
+`cpt_boundaries=True`, which matches the CPT/PyCPT reference; pass
+`cpt_boundaries=False` only when reproducing legacy non-CPT runs.
+"""
+
 import numpy as np
 import xarray as xr
 from scipy.stats import norm, t as t_dist
 
 
 def to_tercile(forecast, obs_climatology, method="counting"):
-    """
+    """Convert a single-year ensemble forecast into tercile probabilities.
+
+    For CV scoring contexts, use `to_tercile_cv()` instead — passing full
+    obs to this function leaks the held-out year into the boundaries.
+
     forecast: (member, lat, lon) - continuous ensemble forecast
     obs_climatology: (year, lat, lon) - historical obs for computing thresholds
     method: "counting" (member counting) or "gaussian" (parametric fit)
@@ -39,7 +65,7 @@ def to_tercile(forecast, obs_climatology, method="counting"):
 
 
 def to_tercile_cv(cv_predictions, obs, method="bootstrap", leverages=None, n_modes=3,
-                  cpt_boundaries=False):
+                  cpt_boundaries=True):
     """
     Compute tercile probabilities from cross-validated predictions.
 

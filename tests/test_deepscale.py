@@ -645,9 +645,282 @@ def test_loyo_no_leakage():
     assert sorted(test_years_seen) == years
 
 
+def test_lko_sliding_consecutive():
+    """Leave-k-out yields sliding windows of k consecutive test years."""
+    from deepscale.cv import lko
+    years = list(range(2000, 2010))
+    folds = list(lko(years, k=3))
+    # Sliding window: positions 0..7 inclusive → 8 folds
+    assert len(folds) == 8
+    for train, test in folds:
+        assert isinstance(test, list)
+        assert len(test) == 3
+        # Test years are consecutive
+        assert test == sorted(test)
+        for i in range(1, len(test)):
+            assert test[i] - test[i - 1] == 1
+        # No leakage
+        assert all(t not in train for t in test)
+        assert len(train) == len(years) - 3
+
+
+def test_lko_default_k():
+    from deepscale.cv import lko
+    years = list(range(2000, 2010))
+    folds = list(lko(years))  # default k=3
+    assert all(len(test) == 3 for _, test in folds)
+
+
+def test_lko_k_equals_n_yields_one_fold():
+    from deepscale.cv import lko
+    years = list(range(2000, 2005))
+    folds = list(lko(years, k=5))
+    assert len(folds) == 1
+    train, test = folds[0]
+    assert train == []
+    assert test == years
+
+
+def test_blocked_partitions_into_contiguous_blocks():
+    """Blocked CV partitions years into non-overlapping contiguous blocks."""
+    from deepscale.cv import blocked
+    years = list(range(2000, 2010))
+    folds = list(blocked(years, block_size=5))
+    assert len(folds) == 2
+    test_years_seen = []
+    for train, test in folds:
+        assert isinstance(test, list)
+        assert len(test) == 5
+        # Block is contiguous
+        assert test == sorted(test)
+        for i in range(1, len(test)):
+            assert test[i] - test[i - 1] == 1
+        # No leakage
+        assert all(t not in train for t in test)
+        test_years_seen.extend(test)
+    # Each year appears exactly once across the partition
+    assert sorted(test_years_seen) == years
+
+
+def test_blocked_with_gap_excludes_neighbours():
+    """A nonzero gap removes years adjacent to the test block from the train set."""
+    from deepscale.cv import blocked
+    years = list(range(2000, 2010))
+    folds = list(blocked(years, block_size=2, gap=1))
+    # First fold: test=[2000, 2001], train must not include 2002 (gap=1)
+    train, test = folds[0]
+    assert test == [2000, 2001]
+    assert 2002 not in train
+    assert 2003 in train  # outside the gap
+    # Middle fold: test=[2004, 2005], train excludes 2003 and 2006
+    train, test = folds[2]
+    assert test == [2004, 2005]
+    assert 2003 not in train
+    assert 2006 not in train
+    assert 2002 in train and 2007 in train
+
+
+def test_blocked_drops_partial_trailing_block():
+    """If years don't divide evenly, the trailing partial block is dropped."""
+    from deepscale.cv import blocked
+    years = list(range(2000, 2008))  # 8 years, block_size=3 → 2 full blocks of 3
+    folds = list(blocked(years, block_size=3))
+    assert len(folds) == 2
+    test_years = [yr for _, test in folds for yr in test]
+    assert 2006 not in test_years  # part of dropped trailing block
+    assert 2007 not in test_years
+
+
+def test_expanding_simulates_realtime():
+    """Expanding window: train on years[:i], test year i, for i >= min_train."""
+    from deepscale.cv import expanding
+    years = list(range(2000, 2010))
+    folds = list(expanding(years, min_train=4))
+    # i ranges from 4..9 → 6 folds
+    assert len(folds) == 6
+    for train, test in folds:
+        assert isinstance(test, int) or not isinstance(test, list)
+        # train is strictly the prefix before test
+        assert all(yr < test for yr in train)
+        assert len(train) >= 4
+
+
+def test_expanding_short_hindcast_warns():
+    """Expanding with too few eval years should warn (issue pitfall)."""
+    import warnings
+    from deepscale.cv import expanding
+    years = list(range(2000, 2010))
+    # min_train=8 → only 2 evaluation years
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        list(expanding(years, min_train=8))
+    assert any("evaluation" in str(w.message).lower() for w in caught), (
+        f"expected warning about few evaluation years, got: {[str(w.message) for w in caught]}"
+    )
+
+
+def test_get_cv_registers_all_schemes():
+    from deepscale.cv import get_cv, loyo, lko, blocked, expanding
+    assert get_cv("loyo") is loyo
+    assert get_cv("lko") is lko
+    assert get_cv("blocked") is blocked
+    assert get_cv("expanding") is expanding
+
+
+def _run_cv_pipeline(scheme, scheme_kwargs, gcm, obs):
+    """Helper: run an end-to-end CV pipeline using the given scheme.
+
+    Returns (cv_predictions, cv_obs) aligned by year, so a downstream
+    `to_tercile_cv()` + `skill()` call can score the result.
+    """
+    from deepscale.methods.cca import CCAMethod
+    years = list(gcm.year.values)
+    preds = []
+    obs_pieces = []
+    for fold in scheme(years, **scheme_kwargs):
+        train_years, test = fold
+        test_list = test if isinstance(test, list) else [test]
+        m = CCAMethod(n_modes=2)
+        m.fit(gcm.sel(year=train_years), obs.sel(year=train_years))
+        for test_yr in test_list:
+            forecast = gcm.sel(year=test_yr)
+            pred = m.predict(forecast).mean("member")
+            preds.append(pred.expand_dims(year=[test_yr]))
+            obs_pieces.append(obs.sel(year=[test_yr]))
+    cv_pred = xr.concat(preds, dim="year").sortby("year")
+    cv_obs = xr.concat(obs_pieces, dim="year").sortby("year")
+    return cv_pred, cv_obs
+
+
+def test_blocked_cv_pipeline_end_to_end(synthetic_gcm_hindcast, synthetic_obs):
+    """Integration: full CV pipeline with `blocked` CV → tercile → skill."""
+    import deepscale
+    from deepscale.cv import blocked
+    from deepscale.tercile import to_tercile_cv
+    cv_pred, cv_obs = _run_cv_pipeline(
+        blocked, {"block_size": 2}, synthetic_gcm_hindcast, synthetic_obs,
+    )
+    # Blocked with block_size=2 on 10 years → 5 folds, every year scored once.
+    assert len(cv_pred.year) == len(synthetic_gcm_hindcast.year)
+    tercile = to_tercile_cv(cv_pred, cv_obs, method="bootstrap")
+    np.testing.assert_allclose(tercile.sum("tercile").values, 1.0, atol=1e-6)
+    rpss = float(deepscale.skill(tercile, cv_obs, metrics=["rpss"]).scores["rpss"])
+    assert -1.5 < rpss < 1.0
+    assert not np.isnan(rpss)
+
+
+def test_expanding_cv_pipeline_end_to_end(synthetic_gcm_hindcast, synthetic_obs):
+    """Integration: full CV pipeline with `expanding` window → tercile → skill."""
+    import warnings
+    import deepscale
+    from deepscale.cv import expanding
+    from deepscale.tercile import to_tercile_cv
+    # min_train=4 → 6 evaluation years (suppressing the short-hindcast warning).
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cv_pred, cv_obs = _run_cv_pipeline(
+            expanding, {"min_train": 4}, synthetic_gcm_hindcast, synthetic_obs,
+        )
+    # Expanding only scores years past the min_train threshold.
+    assert len(cv_pred.year) == 6
+    tercile = to_tercile_cv(cv_pred, cv_obs, method="bootstrap")
+    np.testing.assert_allclose(tercile.sum("tercile").values, 1.0, atol=1e-6)
+    rpss = float(deepscale.skill(tercile, cv_obs, metrics=["rpss"]).scores["rpss"])
+    assert -1.5 < rpss < 1.0
+    assert not np.isnan(rpss)
+
+
+def test_disciplined_to_tercile_cv_pipeline_end_to_end(synthetic_gcm_hindcast, synthetic_obs):
+    """Integration for §6.5 default flip: a real LOYO+CCA hindcast scored via
+    `to_tercile_cv()` (default cpt_boundaries=True) yields a valid RPSS.
+    """
+    import deepscale
+    from deepscale.cv import loyo
+    from deepscale.tercile import to_tercile_cv
+    cv_pred, cv_obs = _run_cv_pipeline(
+        loyo, {}, synthetic_gcm_hindcast, synthetic_obs,
+    )
+    # Use the cpt method to actually exercise the cpt_boundaries=True default;
+    # leverages of zero are fine for this skill-validity check.
+    n = len(cv_obs.year)
+    leverages = np.zeros(n)
+    tercile = to_tercile_cv(cv_pred, cv_obs, method="cpt", leverages=leverages)
+    np.testing.assert_allclose(tercile.sum("tercile").values, 1.0, atol=1e-6)
+    rpss = float(deepscale.skill(tercile, cv_obs, metrics=["rpss"]).scores["rpss"])
+    assert -1.5 < rpss < 1.0
+    assert not np.isnan(rpss)
+
+
 # ===================================================================
 # 8. Tercile conversion
 # ===================================================================
+
+def test_to_tercile_cv_default_is_leakage_disciplined():
+    """`to_tercile_cv()` defaults to cpt_boundaries=True (CPT reference convention).
+
+    Regression guard against accidentally flipping back to the leaky default —
+    the issue (§6.5 / #22) made this the disciplined default.
+    """
+    import inspect
+    from deepscale.tercile import to_tercile_cv
+    sig = inspect.signature(to_tercile_cv)
+    assert sig.parameters["cpt_boundaries"].default is True
+
+
+def test_to_tercile_cv_disciplined_and_leaky_paths_diverge():
+    """The disciplined (cpt_boundaries=True) and leaky (False) paths must
+    produce different tercile probabilities on synthetic data.
+
+    If they ever produce identical results, the boundary path has silently
+    been short-circuited and the leakage discipline has lost its teeth.
+    """
+    from deepscale.tercile import to_tercile_cv
+    rng = np.random.default_rng(0)
+    n_years = 14
+    years = np.arange(2000, 2000 + n_years)
+    lat = np.linspace(-2, 2, 5)
+    lon = np.linspace(0, 4, 5)
+    obs_data = rng.standard_normal((n_years, len(lat), len(lon)))
+    cv_data = obs_data * 0.6 + rng.standard_normal((n_years, len(lat), len(lon))) * 0.4
+    obs = xr.DataArray(obs_data, dims=["year", "lat", "lon"],
+                       coords={"year": years, "lat": lat, "lon": lon})
+    cv = xr.DataArray(cv_data, dims=["year", "lat", "lon"],
+                      coords={"year": years, "lat": lat, "lon": lon})
+    leverages = np.full(n_years, 0.1)
+
+    disciplined = to_tercile_cv(cv, obs, method="cpt", leverages=leverages,
+                                cpt_boundaries=True)
+    leaky = to_tercile_cv(cv, obs, method="cpt", leverages=leverages,
+                          cpt_boundaries=False)
+
+    # Probabilities must differ somewhere (boundaries computed differently).
+    assert not np.allclose(disciplined.values, leaky.values, equal_nan=True), (
+        "disciplined and leaky paths produced identical probabilities — "
+        "the cpt_boundaries flag is no longer affecting behaviour."
+    )
+
+
+def test_to_tercile_cv_leaky_path_still_available():
+    """Opt-in leaky behaviour stays accessible for legacy/comparison runs."""
+    from deepscale.tercile import to_tercile_cv
+    rng = np.random.default_rng(1)
+    n_years = 10
+    years = np.arange(2000, 2000 + n_years)
+    obs = xr.DataArray(
+        rng.standard_normal((n_years, 3, 3)),
+        dims=["year", "lat", "lon"],
+        coords={"year": years, "lat": np.arange(3.0), "lon": np.arange(3.0)},
+    )
+    cv = xr.DataArray(
+        rng.standard_normal((n_years, 3, 3)),
+        dims=["year", "lat", "lon"],
+        coords={"year": years, "lat": np.arange(3.0), "lon": np.arange(3.0)},
+    )
+    leverages = np.full(n_years, 0.1)
+    out = to_tercile_cv(cv, obs, method="cpt", leverages=leverages,
+                        cpt_boundaries=False)
+    np.testing.assert_allclose(out.sum("tercile").values, 1.0, atol=1e-6)
+
 
 def test_continuous_to_tercile(synthetic_gcm_forecast, synthetic_obs):
     from deepscale.tercile import to_tercile
@@ -820,6 +1093,51 @@ def test_optimize_single_gcm(synthetic_gcm_hindcast, synthetic_obs):
     assert np.isfinite(best.score)
     assert best.forecast is not None
     assert "lat" in best.forecast.dims
+
+
+def test_optimize_with_blocked_cv(synthetic_gcm_hindcast, synthetic_obs):
+    """`optimize(cv="blocked")` works end-to-end with multi-year test folds."""
+    import deepscale
+    best = deepscale.optimize(
+        synthetic_gcm_hindcast, synthetic_obs,
+        methods=["cca"], cv="blocked", primary_metric="rpss",
+        verbose=False, progress=False,
+    )
+    assert best.method == "cca"
+    assert np.isfinite(best.score)
+
+
+def test_optimize_with_lko_cv(synthetic_gcm_hindcast, synthetic_obs):
+    """`optimize(cv="lko")` works with sliding multi-year test folds."""
+    import deepscale
+    best = deepscale.optimize(
+        synthetic_gcm_hindcast, synthetic_obs,
+        methods=["cca"], cv="lko", primary_metric="rpss",
+        verbose=False, progress=False,
+    )
+    assert best.method == "cca"
+    assert np.isfinite(best.score)
+
+
+def test_optimize_with_expanding_cv(synthetic_gcm_hindcast, synthetic_obs):
+    """`optimize(cv=callable)` works with realtime-style folds.
+
+    `expanding`'s default min_train=10 leaves no eval years on a 10-year
+    fixture, so we pass a pre-configured callable. This also exercises
+    optimize()'s callable CV path.
+    """
+    from functools import partial
+    import deepscale
+    from deepscale.cv import expanding
+    best = deepscale.optimize(
+        synthetic_gcm_hindcast, synthetic_obs,
+        methods=["cca"],
+        cv=partial(expanding, min_train=4),
+        primary_metric="rpss",
+        verbose=False, progress=False,
+    )
+    assert best.method == "cca"
+    assert np.isfinite(best.score)
 
 
 # ===================================================================
