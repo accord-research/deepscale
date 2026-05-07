@@ -28,7 +28,7 @@ keyword argument::
     tensor, coords = prepare_corrdiff_input(cmip6_ds, target_time, model)
 
     result = deepscale.downscale(
-        gcm=gcm_hindcast,
+        predictor_hindcast=gcm_hindcast,
         obs=obs,
         method="corrdiff",
         target_variable="t2m",
