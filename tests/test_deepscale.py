@@ -992,6 +992,224 @@ def test_ensemble_output_shape():
 
 
 # ===================================================================
+# 9b. New ensemble strategies (§24.1)
+# ===================================================================
+
+def _make_member(value, lat, lon):
+    return xr.DataArray(
+        np.full((3, len(lat), len(lon)), value),
+        dims=["member", "lat", "lon"],
+        coords={"member": [0, 1, 2], "lat": lat, "lon": lon},
+    )
+
+
+def test_drop_worst_drops_lowest_score_member():
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    a = _make_member(1.0, lat, lon)
+    b = _make_member(5.0, lat, lon)
+    c = _make_member(9.0, lat, lon)
+    # Scores rank: a=0.1 (worst), b=0.4, c=0.7. Drop a; mean of b,c = 7.0
+    out = ensemble([a, b, c], obs=None, strategy="drop_worst",
+                   scores=[0.1, 0.4, 0.7])
+    np.testing.assert_allclose(out.values, 7.0)
+
+
+def test_drop_worst_n_drop_kwarg():
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    forecasts = [_make_member(v, lat, lon) for v in [1.0, 2.0, 3.0, 10.0]]
+    # Drop bottom 2 (scores 0.0, 0.1) → mean of values 3.0 and 10.0 = 6.5
+    out = ensemble(forecasts, obs=None, strategy="drop_worst",
+                   scores=[0.0, 0.1, 0.5, 0.9], n_drop=2)
+    np.testing.assert_allclose(out.values, 6.5)
+
+
+def test_drop_worst_uses_optimize_result_score():
+    from deepscale.ensemble import ensemble
+    from deepscale.optimize import OptimizeResult
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    forecasts = [
+        OptimizeResult(method="cca", score=-0.2, forecast=_make_member(1.0, lat, lon)),
+        OptimizeResult(method="cca", score=0.3,  forecast=_make_member(5.0, lat, lon)),
+        OptimizeResult(method="cca", score=0.5,  forecast=_make_member(9.0, lat, lon)),
+    ]
+    out = ensemble(forecasts, obs=None, strategy="drop_worst")
+    np.testing.assert_allclose(out.values, 7.0)
+
+
+def test_drop_worst_explicit_scores_override_optimize_result():
+    from deepscale.ensemble import ensemble
+    from deepscale.optimize import OptimizeResult
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    # OptimizeResult scores would suggest dropping the first; explicit override
+    # flips it so the last is dropped instead.
+    forecasts = [
+        OptimizeResult(method="cca", score=-0.2, forecast=_make_member(1.0, lat, lon)),
+        OptimizeResult(method="cca", score=0.3,  forecast=_make_member(5.0, lat, lon)),
+        OptimizeResult(method="cca", score=0.5,  forecast=_make_member(9.0, lat, lon)),
+    ]
+    out = ensemble(forecasts, obs=None, strategy="drop_worst",
+                   scores=[0.9, 0.8, 0.1])
+    np.testing.assert_allclose(out.values, 3.0)  # mean of 1.0, 5.0
+
+
+def test_drop_worst_errors_without_scores():
+    """Plain DataArrays with no scores and no kwarg cannot be ranked."""
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    forecasts = [_make_member(v, lat, lon) for v in [1.0, 5.0, 9.0]]
+    with pytest.raises(ValueError, match="score"):
+        ensemble(forecasts, obs=None, strategy="drop_worst")
+
+
+def test_drop_worst_n_drop_too_large():
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    forecasts = [_make_member(v, lat, lon) for v in [1.0, 5.0]]
+    with pytest.raises(ValueError, match="n_drop"):
+        ensemble(forecasts, obs=None, strategy="drop_worst",
+                 scores=[0.1, 0.5], n_drop=2)
+
+
+def test_skill_weighted_positive_scores():
+    """Weights ∝ scores, normalized to sum to 1."""
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    a = _make_member(2.0, lat, lon)
+    b = _make_member(4.0, lat, lon)
+    # scores [0.1, 0.3] → weights [0.25, 0.75] → 0.25*2 + 0.75*4 = 3.5
+    out = ensemble([a, b], obs=None, strategy="skill_weighted",
+                   scores=[0.1, 0.3])
+    np.testing.assert_allclose(out.values, 3.5)
+
+
+def test_skill_weighted_negative_scores_get_zero_weight():
+    """Members with non-positive skill score should not contribute."""
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    a = _make_member(2.0, lat, lon)  # bad
+    b = _make_member(4.0, lat, lon)  # good
+    c = _make_member(8.0, lat, lon)  # good
+    # scores [-0.5, 0.2, 0.6] → weights [0, 0.25, 0.75] → 0 + 1.0 + 6.0 = 7.0
+    out = ensemble([a, b, c], obs=None, strategy="skill_weighted",
+                   scores=[-0.5, 0.2, 0.6])
+    np.testing.assert_allclose(out.values, 7.0)
+
+
+def test_skill_weighted_all_nonpositive_falls_back_to_uniform():
+    """If every member has score ≤ 0, return the uniform mean rather than divide-by-zero."""
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    a = _make_member(2.0, lat, lon)
+    b = _make_member(4.0, lat, lon)
+    out = ensemble([a, b], obs=None, strategy="skill_weighted",
+                   scores=[-0.5, -0.2])
+    np.testing.assert_allclose(out.values, 3.0)  # uniform mean
+
+
+def test_skill_weighted_explicit_weights_kwarg():
+    """`weights=` kwarg bypasses score-based computation."""
+    from deepscale.ensemble import ensemble
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    a = _make_member(2.0, lat, lon)
+    b = _make_member(8.0, lat, lon)
+    # weights normalize: [0.1, 0.4] → [0.2, 0.8] → 0.4 + 6.4 = 6.8
+    out = ensemble([a, b], obs=None, strategy="skill_weighted",
+                   weights=[0.1, 0.4])
+    np.testing.assert_allclose(out.values, 6.8)
+
+
+def test_skill_weighted_uses_optimize_result_score():
+    from deepscale.ensemble import ensemble
+    from deepscale.optimize import OptimizeResult
+    lat = np.linspace(-1, 1, 4); lon = np.linspace(0, 1, 4)
+    forecasts = [
+        OptimizeResult(method="cca", score=0.2, forecast=_make_member(2.0, lat, lon)),
+        OptimizeResult(method="cca", score=0.6, forecast=_make_member(4.0, lat, lon)),
+    ]
+    out = ensemble(forecasts, obs=None, strategy="skill_weighted")
+    # weights [0.25, 0.75] → 0.5 + 3.0 = 3.5
+    np.testing.assert_allclose(out.values, 3.5)
+
+
+def _bma_synthetic_setup(seed=0):
+    """Two-member BMA scenario: member 0 tracks obs, member 1 is pure noise."""
+    rng = np.random.default_rng(seed)
+    n_years, nlat, nlon = 12, 5, 5
+    years = np.arange(2000, 2000 + n_years)
+    lat = np.linspace(-2, 2, nlat); lon = np.linspace(0, 4, nlon)
+    obs_data = rng.standard_normal((n_years, nlat, nlon))
+    obs = xr.DataArray(obs_data, dims=["year", "lat", "lon"],
+                       coords={"year": years, "lat": lat, "lon": lon})
+    # Member 0: obs + small noise (skillful)
+    h0 = obs_data + rng.standard_normal(obs_data.shape) * 0.1
+    # Member 1: pure noise (no skill)
+    h1 = rng.standard_normal(obs_data.shape) * 1.5
+    hindcasts = [
+        xr.DataArray(h0, dims=["year", "lat", "lon"],
+                     coords={"year": years, "lat": lat, "lon": lon}),
+        xr.DataArray(h1, dims=["year", "lat", "lon"],
+                     coords={"year": years, "lat": lat, "lon": lon}),
+    ]
+    # Forecasts at one target time: a constant value per member (so we can
+    # check the combined output equals the BMA-weighted average).
+    f0 = xr.DataArray(np.full((3, nlat, nlon), 5.0),
+                      dims=["member", "lat", "lon"],
+                      coords={"member": [0, 1, 2], "lat": lat, "lon": lon})
+    f1 = xr.DataArray(np.full((3, nlat, nlon), 9.0),
+                      dims=["member", "lat", "lon"],
+                      coords={"member": [0, 1, 2], "lat": lat, "lon": lon})
+    return [f0, f1], obs, hindcasts
+
+
+def test_bma_weights_concentrate_on_skillful_member():
+    """BMA should put most weight on the member whose hindcast tracks obs."""
+    from deepscale.strategies.bma import BMAStrategy
+    forecasts, obs, hindcasts = _bma_synthetic_setup(seed=0)
+    s = BMAStrategy()
+    weights, _sigma2 = s.fit(hindcasts, obs)
+    np.testing.assert_allclose(weights.sum(), 1.0, atol=1e-8)
+    assert weights[0] > 0.8, f"skillful member got weight {weights[0]:.3f}"
+    assert weights[1] < 0.2, f"noise member got weight {weights[1]:.3f}"
+
+
+def test_bma_combine_uses_fitted_weights():
+    """Combined forecast equals weighted sum using the fitted BMA weights."""
+    from deepscale.ensemble import ensemble
+    from deepscale.strategies.bma import BMAStrategy
+    forecasts, obs, hindcasts = _bma_synthetic_setup(seed=0)
+    out = ensemble(forecasts, obs, strategy="bma", hindcasts=hindcasts)
+    # Fit independently to compare
+    weights, _ = BMAStrategy().fit(hindcasts, obs)
+    expected = weights[0] * 5.0 + weights[1] * 9.0
+    np.testing.assert_allclose(out.values, expected, rtol=1e-6)
+
+
+def test_bma_requires_hindcasts():
+    from deepscale.ensemble import ensemble
+    forecasts, obs, _ = _bma_synthetic_setup(seed=0)
+    with pytest.raises(ValueError, match="hindcasts"):
+        ensemble(forecasts, obs, strategy="bma")
+
+
+def test_bma_weights_sum_to_one():
+    """Even on degenerate cases, BMA weights should always normalize."""
+    from deepscale.strategies.bma import BMAStrategy
+    rng = np.random.default_rng(42)
+    n_years = 8
+    years = np.arange(2000, 2000 + n_years)
+    obs = xr.DataArray(rng.standard_normal((n_years, 3, 3)),
+                       dims=["year", "lat", "lon"],
+                       coords={"year": years, "lat": np.arange(3.0), "lon": np.arange(3.0)})
+    # Three near-identical members
+    h = [obs + rng.standard_normal((n_years, 3, 3)) * 0.01 for _ in range(3)]
+    weights, _ = BMAStrategy().fit(h, obs)
+    np.testing.assert_allclose(weights.sum(), 1.0, atol=1e-8)
+    assert np.all(weights >= 0)
+
+
+# ===================================================================
 # 10. skill()
 # ===================================================================
 
@@ -1160,6 +1378,67 @@ def test_e2e_multi_gcm_ensemble(synthetic_gcm_hindcast, synthetic_gcm_hindcast2,
     mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="uniform")
     assert "lat" in mme.dims
     assert "lon" in mme.dims
+
+
+def test_e2e_drop_worst_and_skill_weighted_through_optimize(
+    synthetic_gcm_hindcast, synthetic_gcm_hindcast2, synthetic_obs,
+):
+    """Integration: optimize→ensemble using the new skill-aware strategies.
+
+    Both `drop_worst` and `skill_weighted` should consume the OptimizeResult
+    objects directly (using their `.score` field) and produce a valid MME.
+    """
+    import deepscale
+    best1 = deepscale.optimize(synthetic_gcm_hindcast, synthetic_obs,
+                                methods=["bcsd"], cv="loyo", primary_metric="rpss",
+                                verbose=False, progress=False)
+    best2 = deepscale.optimize(synthetic_gcm_hindcast2, synthetic_obs,
+                                methods=["bcsd"], cv="loyo", primary_metric="rpss",
+                                verbose=False, progress=False)
+
+    sw_mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="skill_weighted")
+    assert sw_mme.dims == ("member", "lat", "lon")
+    assert not np.all(np.isnan(sw_mme.values))
+
+    # drop_worst with two members and n_drop=1 reduces to "keep best member only".
+    dw_mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="drop_worst")
+    assert dw_mme.dims == ("member", "lat", "lon")
+    # Result equals whichever single forecast had the higher score.
+    winner = best1.forecast if best1.score >= best2.score else best2.forecast
+    np.testing.assert_allclose(dw_mme.values, winner.values, equal_nan=True)
+
+
+def test_e2e_bma_through_optimize(
+    synthetic_gcm_hindcast, synthetic_gcm_hindcast2, synthetic_obs,
+):
+    """Integration: BMA strategy with hindcasts pulled from the actual fits."""
+    import deepscale
+    from deepscale.methods.bcsd import BCSDMethod
+
+    # Generate per-member hindcasts on the obs grid.
+    hindcasts = []
+    for gcm in (synthetic_gcm_hindcast, synthetic_gcm_hindcast2):
+        m = BCSDMethod()
+        m.fit(gcm, synthetic_obs)
+        # Predict on each year of the GCM hindcast, ensemble-mean across members.
+        preds = []
+        for yr in synthetic_obs.year.values:
+            pred = m.predict(gcm.sel(year=yr)).mean("member")
+            preds.append(pred.expand_dims(year=[yr]))
+        hindcasts.append(xr.concat(preds, dim="year"))
+
+    best1 = deepscale.optimize(synthetic_gcm_hindcast, synthetic_obs,
+                                methods=["bcsd"], cv="loyo", primary_metric="rpss",
+                                verbose=False, progress=False)
+    best2 = deepscale.optimize(synthetic_gcm_hindcast2, synthetic_obs,
+                                methods=["bcsd"], cv="loyo", primary_metric="rpss",
+                                verbose=False, progress=False)
+
+    mme = deepscale.ensemble(
+        [best1, best2], synthetic_obs, strategy="bma", hindcasts=hindcasts,
+    )
+    assert mme.dims == ("member", "lat", "lon")
+    assert not np.all(np.isnan(mme.values))
 
 
 def test_e2e_climatology_baseline(climatology_forecast, synthetic_obs):
