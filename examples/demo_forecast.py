@@ -175,7 +175,11 @@ def main() -> None:
         ],
         spatial=True,
     )
-    report_det = deepscale.skill(cv_fcst_det, obs, metrics=["rmse"], spatial=True)
+    report_det = deepscale.skill(
+        cv_fcst_det, obs,
+        metrics=["rmse", "spread_error_ratio", "spread_error_correlation"],
+        spatial=True,
+    )
 
     print("\n" + "=" * 60)
     print(f"  SKILL REPORT - ECMWF SEAS5 ({best.method.upper()})")

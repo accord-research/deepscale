@@ -1936,12 +1936,23 @@ def test_skill_preset_svslrf(synthetic_obs, perfect_tercile_forecast):
 
 
 def test_skill_preset_all_dedupes_aliases(synthetic_obs, perfect_tercile_forecast):
+    import warnings
     import deepscale
-    report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
     rmse_keys = [k for k in report.scores if k in ("rmse", "root_mean_squared_error")]
     assert len(rmse_keys) == 1, f"expected one RMSE key, got {rmse_keys}"
     hss_keys = [k for k in report.scores if k in ("hss", "heidke_skill_score")]
     assert len(hss_keys) == 1, f"expected one HSS key, got {hss_keys}"
+
+    # spread_error_* require a `member` dim; the tercile forecast doesn't
+    # have one, so metrics="all" should skip them with a warning rather than
+    # abort the whole report.
+    assert "spread_error_ratio" not in report.scores
+    assert "spread_error_correlation" not in report.scores
+    skipped = [str(w.message) for w in caught if "spread_error" in str(w.message)]
+    assert skipped, "expected a skip-warning for spread_error_* metrics"
 
 
 def test_skill_bare_string_single_metric(synthetic_obs, perfect_tercile_forecast):
@@ -1957,3 +1968,212 @@ def test_skill_list_metrics_still_works(synthetic_obs, perfect_tercile_forecast)
         metrics=["rpss", "pearson_r"],
     )
     assert set(report.scores.keys()) >= {"rpss", "pearson_r"}
+
+
+# ===================================================================
+# 19. Spread-error metric
+# ===================================================================
+
+def test_spread_error_ratio_calibrated():
+    """Calibrated ensemble: per-year ensemble-mean bias matched to per-member
+    spread so spread ≈ error.
+
+    Construction: each member = truth + bias_y(lat, lon) + member_noise. The
+    bias is shared across members (so it contributes to error but not spread).
+    The member noise contributes to spread (std σ) and adds a small σ/√N
+    component to error. With bias std B = σ·√(π/2), E[|bias|] = σ, so
+    mean(spread) ≈ mean(error) ≈ σ.
+    """
+    from deepscale.metrics.spread_error import SpreadErrorRatioMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 200, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    sigma = 1.0
+    B = sigma * np.sqrt(np.pi / 2)
+    bias = np.random.randn(n_year, n_lat, n_lon) * B  # shared across members
+    member_noise = np.random.randn(n_year, n_member, n_lat, n_lon) * sigma
+    fcst = truth[:, None, :, :] + bias[:, None, :, :] + member_noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs)
+    assert 0.85 < ratio < 1.15, f"expected ~1, got {ratio}"
+
+
+def test_spread_error_ratio_underdispersed():
+    """Spread = 0.1 × error → ratio ≈ 0.1."""
+    from deepscale.metrics.spread_error import SpreadErrorRatioMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 30, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    # Add a large per-year bias so |mean - obs| is dominated by the bias,
+    # and shrink the member-axis noise so spread is 10× smaller.
+    bias = np.random.randn(n_year, 1, n_lat, n_lon) * 5.0
+    small_noise = np.random.randn(n_year, n_member, n_lat, n_lon) * 0.5
+    fcst = truth[:, None, :, :] + bias + small_noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs)
+    assert ratio < 0.3, f"expected strongly underdispersed (<0.3), got {ratio}"
+
+
+def test_spread_error_correlation_tracks():
+    """Ensemble where high-spread years are also high-error years.
+
+    Construct an ensemble whose per-year noise amplitude varies with year;
+    the ensemble mean's distance from truth grows with that amplitude, so
+    spread and error track each other strongly.
+    """
+    from deepscale.metrics.spread_error import SpreadErrorCorrelationMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 30, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    amplitude = np.linspace(0.2, 4.0, n_year)  # year-varying noise level
+    noise = (
+        np.random.randn(n_year, n_member, n_lat, n_lon)
+        * amplitude[:, None, None, None]
+    )
+    fcst = truth[:, None, :, :] + noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    r = SpreadErrorCorrelationMetric().compute(forecast, obs)
+    assert r > 0.7, f"expected strong positive spread-error correlation, got {r}"
+
+
+def test_spread_error_no_member_raises():
+    """Forecast without a 'member' dim is a usage error."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorRatioMetric,
+        SpreadErrorCorrelationMetric,
+    )
+
+    n_year, n_lat, n_lon = 10, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+
+    for cls in (SpreadErrorRatioMetric, SpreadErrorCorrelationMetric):
+        with pytest.raises(ValueError, match="member"):
+            cls().compute(forecast, obs)
+
+
+def test_spread_error_spatial_returns_dataarray():
+    """spatial=True collapses only the year dim and returns a DataArray."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorRatioMetric,
+        SpreadErrorCorrelationMetric,
+    )
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 10, 4, 5, 6
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_member, n_lat, n_lon),
+        dims=["year", "member", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs, spatial=True)
+    corr = SpreadErrorCorrelationMetric().compute(forecast, obs, spatial=True)
+
+    for result in (ratio, corr):
+        assert isinstance(result, xr.DataArray)
+        assert set(result.dims) == {"lat", "lon"}
+        assert result.sizes == {"lat": n_lat, "lon": n_lon}
+
+
+def test_spread_error_diagnostics_pairs():
+    """Helper returns per-year spread and error series of equal length."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorDiagnostics,
+        spread_error_diagnostics,
+    )
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 8, 5, 3, 3
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_member, n_lat, n_lon),
+        dims=["year", "member", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    diag = spread_error_diagnostics(forecast, obs)
+    assert isinstance(diag, SpreadErrorDiagnostics)
+    assert diag.spread.dims == ("year",)
+    assert diag.error.dims == ("year",)
+    assert diag.spread.sizes["year"] == n_year
+    assert diag.error.sizes["year"] == n_year
+
+    diag_sp = spread_error_diagnostics(forecast, obs, spatial=True)
+    assert set(diag_sp.spread.dims) == {"year", "lat", "lon"}
+    assert set(diag_sp.error.dims) == {"year", "lat", "lon"}
