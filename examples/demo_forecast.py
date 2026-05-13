@@ -171,7 +171,7 @@ def main() -> None:
         metrics=[
             "rpss", "pearson_r", "spearman", "hss",
             "2afc", "roc_area_below_normal", "roc_area_above_normal",
-            "reliability",
+            "generalized_roc", "reliability",
         ],
         spatial=True,
     )

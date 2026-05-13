@@ -2177,3 +2177,248 @@ def test_spread_error_diagnostics_pairs():
     diag_sp = spread_error_diagnostics(forecast, obs, spatial=True)
     assert set(diag_sp.spread.dims) == {"year", "lat", "lon"}
     assert set(diag_sp.error.dims) == {"year", "lat", "lon"}
+
+
+# ===================================================================
+# 20. Generalized ROC (GROC)
+# ===================================================================
+
+def test_groc_perfect_forecast(synthetic_obs):
+    """A forecast that puts all probability mass on the correct tercile gives GROC = 1.0."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_climatology_forecast(synthetic_obs):
+    """A uniform climatological forecast (1/3, 1/3, 1/3) gives GROC = 0.5."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs)
+    np.testing.assert_allclose(score, 0.5, atol=1e-9)
+
+
+def test_groc_spatial_returns_dataarray(synthetic_obs):
+    """spatial=True collapses year only and returns a (lat, lon) DataArray."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    result = GeneralizedROCMetric().compute(forecast, synthetic_obs, spatial=True)
+    assert isinstance(result, xr.DataArray)
+    assert set(result.dims) == {"lat", "lon"}
+    assert result.sizes == {"lat": n_lat, "lon": n_lon}
+    # Perfect forecast in every cell → each cell should be 1.0.
+    np.testing.assert_allclose(result.values, 1.0, atol=1e-9)
+
+
+def test_groc_single_category_returns_nan():
+    """If every obs sample lands in the same tercile, GROC is undefined → NaN + warning."""
+    import warnings as _warnings
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    # All-constant obs → _cpt_boundaries collapses t33 = t67 = the constant,
+    # so every cell falls through both `>` comparisons and lands in the same
+    # single category. With <2 distinct labels, GROC is undefined.
+    n_year, n_lat, n_lon = 10, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    obs = xr.DataArray(
+        np.ones((n_year, n_lat, n_lon)),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={**coords, "tercile": [0, 1, 2]},
+    )
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        score = GeneralizedROCMetric().compute(forecast, obs)
+    assert np.isnan(score), f"expected NaN, got {score}"
+    msgs = [str(w.message) for w in caught if "generalized_roc" in str(w.message)]
+    assert msgs, "expected a RuntimeWarning naming the metric"
+
+
+def test_groc_missing_tercile_raises(synthetic_obs):
+    """A forecast without a size-3 'tercile' dim is a usage error."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    forecast = xr.DataArray(  # no 'tercile' dim at all
+        np.zeros((n_year, n_lat, n_lon)),
+        dims=["year", "lat", "lon"],
+        coords={"year": synthetic_obs.year, "lat": synthetic_obs.lat, "lon": synthetic_obs.lon},
+    )
+    with pytest.raises(ValueError, match="tercile"):
+        GeneralizedROCMetric().compute(forecast, synthetic_obs)
+
+    # Wrong-sized tercile dim (size 2 instead of 3) also raises.
+    forecast2 = xr.DataArray(
+        np.zeros((n_year, 2, n_lat, n_lon)),
+        dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    with pytest.raises(ValueError, match="tercile"):
+        GeneralizedROCMetric().compute(forecast2, synthetic_obs)
+
+
+def test_groc_loo_boundaries_perfect(synthetic_obs):
+    """LOO path: build the perfect forecast against LOO-derived categories
+    and assert score == 1.0. Confirms the LOO branch is actually used (a
+    non-LOO-built perfect forecast would *not* score 1.0 here)."""
+    from deepscale.metrics.generalized_roc import (
+        GeneralizedROCMetric,
+        _obs_to_categories,
+    )
+
+    obs_vals = synthetic_obs.values
+    obs_cat = _obs_to_categories(obs_vals, loo_boundaries=True)
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs, loo_boundaries=True)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_pairs_correctly_when_forecast_dims_permuted(synthetic_obs):
+    """Permuting forecast's non-tercile dims must not change the score —
+    catches the obs/forecast flat-pairing hazard."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+    n_year, n_lat, n_lon = obs_vals.shape
+
+    # Build a forecast that is NOT perfect — flip 1/4 of the years' labels
+    # so the score is sensitive to mispairing rather than collapsing to 1.0.
+    rng = np.random.default_rng(0)
+    flip = rng.random((n_year, n_lat, n_lon)) < 0.25
+    labels = np.where(flip, (obs_cat + 1) % 3, obs_cat)
+    fcst_canon = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst_canon[:, k, :, :] = (labels == k).astype(float)
+
+    coords = {
+        "year": synthetic_obs.year,
+        "tercile": [0, 1, 2],
+        "lat": synthetic_obs.lat,
+        "lon": synthetic_obs.lon,
+    }
+    forecast_canon = xr.DataArray(
+        fcst_canon, dims=["year", "tercile", "lat", "lon"], coords=coords,
+    )
+    forecast_permuted = forecast_canon.transpose("year", "tercile", "lon", "lat")
+    assert forecast_canon.dims != forecast_permuted.dims
+
+    s_canon = GeneralizedROCMetric().compute(forecast_canon, synthetic_obs)
+    s_perm = GeneralizedROCMetric().compute(forecast_permuted, synthetic_obs)
+    np.testing.assert_allclose(s_perm, s_canon, atol=1e-12)
+
+
+def test_groc_independent_oracle():
+    """Hand-built fixture with obvious terciles (no reuse of _cpt_boundaries
+    in the test): obs is the year index repeated per cell, so terciles are
+    just the lowest-third, middle-third, highest-third of years.
+    """
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = 12, 2, 2  # exactly divisible into thirds
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    obs_1d = np.arange(n_year, dtype=float)
+    obs = xr.DataArray(
+        np.broadcast_to(obs_1d[:, None, None], (n_year, n_lat, n_lon)).copy(),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    # By hand: years 0-3 → BN, 4-7 → NN, 8-11 → AN.
+    expected_label = np.repeat([0, 1, 2], 4)
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for y in range(n_year):
+        fcst[y, expected_label[y], :, :] = 1.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={**coords, "tercile": [0, 1, 2]},
+    )
+    score = GeneralizedROCMetric().compute(forecast, obs)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_alias_registered():
+    """Both 'generalized_roc' and 'groc' resolve to the same class."""
+    from deepscale.registry import get_metric
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    assert get_metric("generalized_roc") is GeneralizedROCMetric
+    assert get_metric("groc") is GeneralizedROCMetric
