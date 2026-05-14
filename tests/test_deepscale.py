@@ -965,7 +965,7 @@ def test_uniform_ensemble():
     c = xr.DataArray(np.ones((3, 5, 5)) * 6, dims=["member", "lat", "lon"],
                      coords={"member": [0, 1, 2], "lat": lat, "lon": lon})
     result = ensemble([a, b, c], obs=None, strategy="uniform")
-    np.testing.assert_allclose(result.values, 4.0)
+    np.testing.assert_allclose(result.forecast.values, 4.0)
 
 
 def test_ensemble_single_model():
@@ -975,7 +975,7 @@ def test_ensemble_single_model():
     a = xr.DataArray(np.ones((3, 5, 5)) * 7, dims=["member", "lat", "lon"],
                      coords={"member": [0, 1, 2], "lat": lat, "lon": lon})
     result = ensemble([a], obs=None, strategy="uniform")
-    np.testing.assert_allclose(result.values, 7.0)
+    np.testing.assert_allclose(result.forecast.values, 7.0)
 
 
 def test_ensemble_output_shape():
@@ -987,8 +987,8 @@ def test_ensemble_output_shape():
     b = xr.DataArray(np.ones((3, 5, 5)) * 2, dims=["member", "lat", "lon"],
                      coords={"member": [0, 1, 2], "lat": lat, "lon": lon})
     result = ensemble([a, b], obs=None)
-    assert "lat" in result.dims
-    assert "lon" in result.dims
+    assert "lat" in result.forecast.dims
+    assert "lon" in result.forecast.dims
 
 
 # ===================================================================
@@ -1012,7 +1012,7 @@ def test_drop_worst_drops_lowest_score_member():
     # Scores rank: a=0.1 (worst), b=0.4, c=0.7. Drop a; mean of b,c = 7.0
     out = ensemble([a, b, c], obs=None, strategy="drop_worst",
                    scores=[0.1, 0.4, 0.7])
-    np.testing.assert_allclose(out.values, 7.0)
+    np.testing.assert_allclose(out.forecast.values, 7.0)
 
 
 def test_drop_worst_n_drop_kwarg():
@@ -1022,7 +1022,7 @@ def test_drop_worst_n_drop_kwarg():
     # Drop bottom 2 (scores 0.0, 0.1) → mean of values 3.0 and 10.0 = 6.5
     out = ensemble(forecasts, obs=None, strategy="drop_worst",
                    scores=[0.0, 0.1, 0.5, 0.9], n_drop=2)
-    np.testing.assert_allclose(out.values, 6.5)
+    np.testing.assert_allclose(out.forecast.values, 6.5)
 
 
 def test_drop_worst_uses_optimize_result_score():
@@ -1035,7 +1035,7 @@ def test_drop_worst_uses_optimize_result_score():
         OptimizeResult(method="cca", score=0.5,  forecast=_make_member(9.0, lat, lon)),
     ]
     out = ensemble(forecasts, obs=None, strategy="drop_worst")
-    np.testing.assert_allclose(out.values, 7.0)
+    np.testing.assert_allclose(out.forecast.values, 7.0)
 
 
 def test_drop_worst_explicit_scores_override_optimize_result():
@@ -1051,7 +1051,7 @@ def test_drop_worst_explicit_scores_override_optimize_result():
     ]
     out = ensemble(forecasts, obs=None, strategy="drop_worst",
                    scores=[0.9, 0.8, 0.1])
-    np.testing.assert_allclose(out.values, 3.0)  # mean of 1.0, 5.0
+    np.testing.assert_allclose(out.forecast.values, 3.0)  # mean of 1.0, 5.0
 
 
 def test_drop_worst_errors_without_scores():
@@ -1081,7 +1081,7 @@ def test_skill_weighted_positive_scores():
     # scores [0.1, 0.3] → weights [0.25, 0.75] → 0.25*2 + 0.75*4 = 3.5
     out = ensemble([a, b], obs=None, strategy="skill_weighted",
                    scores=[0.1, 0.3])
-    np.testing.assert_allclose(out.values, 3.5)
+    np.testing.assert_allclose(out.forecast.values, 3.5)
 
 
 def test_skill_weighted_negative_scores_get_zero_weight():
@@ -1094,7 +1094,7 @@ def test_skill_weighted_negative_scores_get_zero_weight():
     # scores [-0.5, 0.2, 0.6] → weights [0, 0.25, 0.75] → 0 + 1.0 + 6.0 = 7.0
     out = ensemble([a, b, c], obs=None, strategy="skill_weighted",
                    scores=[-0.5, 0.2, 0.6])
-    np.testing.assert_allclose(out.values, 7.0)
+    np.testing.assert_allclose(out.forecast.values, 7.0)
 
 
 def test_skill_weighted_all_nonpositive_falls_back_to_uniform():
@@ -1105,7 +1105,7 @@ def test_skill_weighted_all_nonpositive_falls_back_to_uniform():
     b = _make_member(4.0, lat, lon)
     out = ensemble([a, b], obs=None, strategy="skill_weighted",
                    scores=[-0.5, -0.2])
-    np.testing.assert_allclose(out.values, 3.0)  # uniform mean
+    np.testing.assert_allclose(out.forecast.values, 3.0)  # uniform mean
 
 
 def test_skill_weighted_explicit_weights_kwarg():
@@ -1117,7 +1117,7 @@ def test_skill_weighted_explicit_weights_kwarg():
     # weights normalize: [0.1, 0.4] → [0.2, 0.8] → 0.4 + 6.4 = 6.8
     out = ensemble([a, b], obs=None, strategy="skill_weighted",
                    weights=[0.1, 0.4])
-    np.testing.assert_allclose(out.values, 6.8)
+    np.testing.assert_allclose(out.forecast.values, 6.8)
 
 
 def test_skill_weighted_uses_optimize_result_score():
@@ -1130,7 +1130,7 @@ def test_skill_weighted_uses_optimize_result_score():
     ]
     out = ensemble(forecasts, obs=None, strategy="skill_weighted")
     # weights [0.25, 0.75] → 0.5 + 3.0 = 3.5
-    np.testing.assert_allclose(out.values, 3.5)
+    np.testing.assert_allclose(out.forecast.values, 3.5)
 
 
 def _bma_synthetic_setup(seed=0):
@@ -1168,7 +1168,7 @@ def test_bma_weights_concentrate_on_skillful_member():
     from deepscale.strategies.bma import BMAStrategy
     forecasts, obs, hindcasts = _bma_synthetic_setup(seed=0)
     s = BMAStrategy()
-    weights, _sigma2 = s.fit(hindcasts, obs)
+    weights, _sigma2 = s._fit_em(hindcasts, obs)
     np.testing.assert_allclose(weights.sum(), 1.0, atol=1e-8)
     assert weights[0] > 0.8, f"skillful member got weight {weights[0]:.3f}"
     assert weights[1] < 0.2, f"noise member got weight {weights[1]:.3f}"
@@ -1181,9 +1181,9 @@ def test_bma_combine_uses_fitted_weights():
     forecasts, obs, hindcasts = _bma_synthetic_setup(seed=0)
     out = ensemble(forecasts, obs, strategy="bma", hindcasts=hindcasts)
     # Fit independently to compare
-    weights, _ = BMAStrategy().fit(hindcasts, obs)
+    weights, _ = BMAStrategy()._fit_em(hindcasts, obs)
     expected = weights[0] * 5.0 + weights[1] * 9.0
-    np.testing.assert_allclose(out.values, expected, rtol=1e-6)
+    np.testing.assert_allclose(out.forecast.values, expected, rtol=1e-6)
 
 
 def test_bma_requires_hindcasts():
@@ -1204,7 +1204,7 @@ def test_bma_weights_sum_to_one():
                        coords={"year": years, "lat": np.arange(3.0), "lon": np.arange(3.0)})
     # Three near-identical members
     h = [obs + rng.standard_normal((n_years, 3, 3)) * 0.01 for _ in range(3)]
-    weights, _ = BMAStrategy().fit(h, obs)
+    weights, _ = BMAStrategy()._fit_em(h, obs)
     np.testing.assert_allclose(weights.sum(), 1.0, atol=1e-8)
     assert np.all(weights >= 0)
 
@@ -1376,8 +1376,8 @@ def test_e2e_multi_gcm_ensemble(synthetic_gcm_hindcast, synthetic_gcm_hindcast2,
     best2 = deepscale.optimize(synthetic_gcm_hindcast2, synthetic_obs,
                                 methods=["bcsd"], cv="loyo", primary_metric="rpss")
     mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="uniform")
-    assert "lat" in mme.dims
-    assert "lon" in mme.dims
+    assert "lat" in mme.forecast.dims
+    assert "lon" in mme.forecast.dims
 
 
 def test_e2e_drop_worst_and_skill_weighted_through_optimize(
@@ -1397,15 +1397,15 @@ def test_e2e_drop_worst_and_skill_weighted_through_optimize(
                                 verbose=False, progress=False)
 
     sw_mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="skill_weighted")
-    assert sw_mme.dims == ("member", "lat", "lon")
-    assert not np.all(np.isnan(sw_mme.values))
+    assert sw_mme.forecast.dims == ("member", "lat", "lon")
+    assert not np.all(np.isnan(sw_mme.forecast.values))
 
     # drop_worst with two members and n_drop=1 reduces to "keep best member only".
     dw_mme = deepscale.ensemble([best1, best2], synthetic_obs, strategy="drop_worst")
-    assert dw_mme.dims == ("member", "lat", "lon")
+    assert dw_mme.forecast.dims == ("member", "lat", "lon")
     # Result equals whichever single forecast had the higher score.
     winner = best1.forecast if best1.score >= best2.score else best2.forecast
-    np.testing.assert_allclose(dw_mme.values, winner.values, equal_nan=True)
+    np.testing.assert_allclose(dw_mme.forecast.values, winner.values, equal_nan=True)
 
 
 def test_e2e_bma_through_optimize(
@@ -1437,8 +1437,8 @@ def test_e2e_bma_through_optimize(
     mme = deepscale.ensemble(
         [best1, best2], synthetic_obs, strategy="bma", hindcasts=hindcasts,
     )
-    assert mme.dims == ("member", "lat", "lon")
-    assert not np.all(np.isnan(mme.values))
+    assert mme.forecast.dims == ("member", "lat", "lon")
+    assert not np.all(np.isnan(mme.forecast.values))
 
 
 def test_e2e_climatology_baseline(climatology_forecast, synthetic_obs):
@@ -1936,12 +1936,23 @@ def test_skill_preset_svslrf(synthetic_obs, perfect_tercile_forecast):
 
 
 def test_skill_preset_all_dedupes_aliases(synthetic_obs, perfect_tercile_forecast):
+    import warnings
     import deepscale
-    report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
     rmse_keys = [k for k in report.scores if k in ("rmse", "root_mean_squared_error")]
     assert len(rmse_keys) == 1, f"expected one RMSE key, got {rmse_keys}"
     hss_keys = [k for k in report.scores if k in ("hss", "heidke_skill_score")]
     assert len(hss_keys) == 1, f"expected one HSS key, got {hss_keys}"
+
+    # spread_error_* require a `member` dim; the tercile forecast doesn't
+    # have one, so metrics="all" should skip them with a warning rather than
+    # abort the whole report.
+    assert "spread_error_ratio" not in report.scores
+    assert "spread_error_correlation" not in report.scores
+    skipped = [str(w.message) for w in caught if "spread_error" in str(w.message)]
+    assert skipped, "expected a skip-warning for spread_error_* metrics"
 
 
 def test_skill_bare_string_single_metric(synthetic_obs, perfect_tercile_forecast):
@@ -1957,3 +1968,859 @@ def test_skill_list_metrics_still_works(synthetic_obs, perfect_tercile_forecast)
         metrics=["rpss", "pearson_r"],
     )
     assert set(report.scores.keys()) >= {"rpss", "pearson_r"}
+
+
+# ===================================================================
+# 19. Spread-error metric
+# ===================================================================
+
+def test_spread_error_ratio_calibrated():
+    """Calibrated ensemble: per-year ensemble-mean bias matched to per-member
+    spread so spread ≈ error.
+
+    Construction: each member = truth + bias_y(lat, lon) + member_noise. The
+    bias is shared across members (so it contributes to error but not spread).
+    The member noise contributes to spread (std σ) and adds a small σ/√N
+    component to error. With bias std B = σ·√(π/2), E[|bias|] = σ, so
+    mean(spread) ≈ mean(error) ≈ σ.
+    """
+    from deepscale.metrics.spread_error import SpreadErrorRatioMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 200, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    sigma = 1.0
+    B = sigma * np.sqrt(np.pi / 2)
+    bias = np.random.randn(n_year, n_lat, n_lon) * B  # shared across members
+    member_noise = np.random.randn(n_year, n_member, n_lat, n_lon) * sigma
+    fcst = truth[:, None, :, :] + bias[:, None, :, :] + member_noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs)
+    assert 0.85 < ratio < 1.15, f"expected ~1, got {ratio}"
+
+
+def test_spread_error_ratio_underdispersed():
+    """Spread = 0.1 × error → ratio ≈ 0.1."""
+    from deepscale.metrics.spread_error import SpreadErrorRatioMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 30, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    # Add a large per-year bias so |mean - obs| is dominated by the bias,
+    # and shrink the member-axis noise so spread is 10× smaller.
+    bias = np.random.randn(n_year, 1, n_lat, n_lon) * 5.0
+    small_noise = np.random.randn(n_year, n_member, n_lat, n_lon) * 0.5
+    fcst = truth[:, None, :, :] + bias + small_noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs)
+    assert ratio < 0.3, f"expected strongly underdispersed (<0.3), got {ratio}"
+
+
+def test_spread_error_correlation_tracks():
+    """Ensemble where high-spread years are also high-error years.
+
+    Construct an ensemble whose per-year noise amplitude varies with year;
+    the ensemble mean's distance from truth grows with that amplitude, so
+    spread and error track each other strongly.
+    """
+    from deepscale.metrics.spread_error import SpreadErrorCorrelationMetric
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 30, 8, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    truth = np.random.randn(n_year, n_lat, n_lon)
+    amplitude = np.linspace(0.2, 4.0, n_year)  # year-varying noise level
+    noise = (
+        np.random.randn(n_year, n_member, n_lat, n_lon)
+        * amplitude[:, None, None, None]
+    )
+    fcst = truth[:, None, :, :] + noise
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "member", "lat", "lon"], coords=coords
+    )
+    obs = xr.DataArray(
+        truth, dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    r = SpreadErrorCorrelationMetric().compute(forecast, obs)
+    assert r > 0.7, f"expected strong positive spread-error correlation, got {r}"
+
+
+def test_spread_error_no_member_raises():
+    """Forecast without a 'member' dim is a usage error."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorRatioMetric,
+        SpreadErrorCorrelationMetric,
+    )
+
+    n_year, n_lat, n_lon = 10, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+
+    for cls in (SpreadErrorRatioMetric, SpreadErrorCorrelationMetric):
+        with pytest.raises(ValueError, match="member"):
+            cls().compute(forecast, obs)
+
+
+def test_spread_error_spatial_returns_dataarray():
+    """spatial=True collapses only the year dim and returns a DataArray."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorRatioMetric,
+        SpreadErrorCorrelationMetric,
+    )
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 10, 4, 5, 6
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_member, n_lat, n_lon),
+        dims=["year", "member", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    ratio = SpreadErrorRatioMetric().compute(forecast, obs, spatial=True)
+    corr = SpreadErrorCorrelationMetric().compute(forecast, obs, spatial=True)
+
+    for result in (ratio, corr):
+        assert isinstance(result, xr.DataArray)
+        assert set(result.dims) == {"lat", "lon"}
+        assert result.sizes == {"lat": n_lat, "lon": n_lon}
+
+
+def test_spread_error_diagnostics_pairs():
+    """Helper returns per-year spread and error series of equal length."""
+    from deepscale.metrics.spread_error import (
+        SpreadErrorDiagnostics,
+        spread_error_diagnostics,
+    )
+
+    np.random.seed(0)
+    n_year, n_member, n_lat, n_lon = 8, 5, 3, 3
+    coords = {
+        "year": np.arange(n_year),
+        "member": np.arange(n_member),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    forecast = xr.DataArray(
+        np.random.randn(n_year, n_member, n_lat, n_lon),
+        dims=["year", "member", "lat", "lon"], coords=coords,
+    )
+    obs = xr.DataArray(
+        np.random.randn(n_year, n_lat, n_lon),
+        dims=["year", "lat", "lon"],
+        coords={k: coords[k] for k in ("year", "lat", "lon")},
+    )
+
+    diag = spread_error_diagnostics(forecast, obs)
+    assert isinstance(diag, SpreadErrorDiagnostics)
+    assert diag.spread.dims == ("year",)
+    assert diag.error.dims == ("year",)
+    assert diag.spread.sizes["year"] == n_year
+    assert diag.error.sizes["year"] == n_year
+
+    diag_sp = spread_error_diagnostics(forecast, obs, spatial=True)
+    assert set(diag_sp.spread.dims) == {"year", "lat", "lon"}
+    assert set(diag_sp.error.dims) == {"year", "lat", "lon"}
+
+
+# ===================================================================
+# 20. Generalized ROC (GROC)
+# ===================================================================
+
+def test_groc_perfect_forecast(synthetic_obs):
+    """A forecast that puts all probability mass on the correct tercile gives GROC = 1.0."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_climatology_forecast(synthetic_obs):
+    """A uniform climatological forecast (1/3, 1/3, 1/3) gives GROC = 0.5."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs)
+    np.testing.assert_allclose(score, 0.5, atol=1e-9)
+
+
+def test_groc_spatial_returns_dataarray(synthetic_obs):
+    """spatial=True collapses year only and returns a (lat, lon) DataArray."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    result = GeneralizedROCMetric().compute(forecast, synthetic_obs, spatial=True)
+    assert isinstance(result, xr.DataArray)
+    assert set(result.dims) == {"lat", "lon"}
+    assert result.sizes == {"lat": n_lat, "lon": n_lon}
+    # Perfect forecast in every cell → each cell should be 1.0.
+    np.testing.assert_allclose(result.values, 1.0, atol=1e-9)
+
+
+def test_groc_single_category_returns_nan():
+    """If every obs sample lands in the same tercile, GROC is undefined → NaN + warning."""
+    import warnings as _warnings
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    # All-constant obs → _cpt_boundaries collapses t33 = t67 = the constant,
+    # so every cell falls through both `>` comparisons and lands in the same
+    # single category. With <2 distinct labels, GROC is undefined.
+    n_year, n_lat, n_lon = 10, 4, 4
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    obs = xr.DataArray(
+        np.ones((n_year, n_lat, n_lon)),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    fcst = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={**coords, "tercile": [0, 1, 2]},
+    )
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        score = GeneralizedROCMetric().compute(forecast, obs)
+    assert np.isnan(score), f"expected NaN, got {score}"
+    msgs = [str(w.message) for w in caught if "generalized_roc" in str(w.message)]
+    assert msgs, "expected a RuntimeWarning naming the metric"
+
+
+def test_groc_missing_tercile_raises(synthetic_obs):
+    """A forecast without a size-3 'tercile' dim is a usage error."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = synthetic_obs.shape
+    forecast = xr.DataArray(  # no 'tercile' dim at all
+        np.zeros((n_year, n_lat, n_lon)),
+        dims=["year", "lat", "lon"],
+        coords={"year": synthetic_obs.year, "lat": synthetic_obs.lat, "lon": synthetic_obs.lon},
+    )
+    with pytest.raises(ValueError, match="tercile"):
+        GeneralizedROCMetric().compute(forecast, synthetic_obs)
+
+    # Wrong-sized tercile dim (size 2 instead of 3) also raises.
+    forecast2 = xr.DataArray(
+        np.zeros((n_year, 2, n_lat, n_lon)),
+        dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    with pytest.raises(ValueError, match="tercile"):
+        GeneralizedROCMetric().compute(forecast2, synthetic_obs)
+
+
+def test_groc_loo_boundaries_perfect(synthetic_obs):
+    """LOO path: build the perfect forecast against LOO-derived categories
+    and assert score == 1.0. Confirms the LOO branch is actually used (a
+    non-LOO-built perfect forecast would *not* score 1.0 here)."""
+    from deepscale.metrics.generalized_roc import (
+        GeneralizedROCMetric,
+        _obs_to_categories,
+    )
+
+    obs_vals = synthetic_obs.values
+    obs_cat = _obs_to_categories(obs_vals, loo_boundaries=True)
+    n_year, n_lat, n_lon = obs_vals.shape
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst[:, k, :, :] = (obs_cat == k).astype(float)
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": synthetic_obs.year,
+            "tercile": [0, 1, 2],
+            "lat": synthetic_obs.lat,
+            "lon": synthetic_obs.lon,
+        },
+    )
+    score = GeneralizedROCMetric().compute(forecast, synthetic_obs, loo_boundaries=True)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_pairs_correctly_when_forecast_dims_permuted(synthetic_obs):
+    """Permuting forecast's non-tercile dims must not change the score —
+    catches the obs/forecast flat-pairing hazard."""
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    obs_vals = synthetic_obs.values
+    t33, t67 = _cpt_boundaries(obs_vals)
+    obs_cat = np.where(t33 > obs_vals, 0, np.where(t67 > obs_vals, 1, 2))
+    n_year, n_lat, n_lon = obs_vals.shape
+
+    # Build a forecast that is NOT perfect — flip 1/4 of the years' labels
+    # so the score is sensitive to mispairing rather than collapsing to 1.0.
+    rng = np.random.default_rng(0)
+    flip = rng.random((n_year, n_lat, n_lon)) < 0.25
+    labels = np.where(flip, (obs_cat + 1) % 3, obs_cat)
+    fcst_canon = np.zeros((n_year, 3, n_lat, n_lon))
+    for k in range(3):
+        fcst_canon[:, k, :, :] = (labels == k).astype(float)
+
+    coords = {
+        "year": synthetic_obs.year,
+        "tercile": [0, 1, 2],
+        "lat": synthetic_obs.lat,
+        "lon": synthetic_obs.lon,
+    }
+    forecast_canon = xr.DataArray(
+        fcst_canon, dims=["year", "tercile", "lat", "lon"], coords=coords,
+    )
+    forecast_permuted = forecast_canon.transpose("year", "tercile", "lon", "lat")
+    assert forecast_canon.dims != forecast_permuted.dims
+
+    s_canon = GeneralizedROCMetric().compute(forecast_canon, synthetic_obs)
+    s_perm = GeneralizedROCMetric().compute(forecast_permuted, synthetic_obs)
+    np.testing.assert_allclose(s_perm, s_canon, atol=1e-12)
+
+
+def test_groc_independent_oracle():
+    """Hand-built fixture with obvious terciles (no reuse of _cpt_boundaries
+    in the test): obs is the year index repeated per cell, so terciles are
+    just the lowest-third, middle-third, highest-third of years.
+    """
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    n_year, n_lat, n_lon = 12, 2, 2  # exactly divisible into thirds
+    coords = {
+        "year": np.arange(n_year),
+        "lat": np.linspace(-1, 1, n_lat),
+        "lon": np.linspace(0, 1, n_lon),
+    }
+    obs_1d = np.arange(n_year, dtype=float)
+    obs = xr.DataArray(
+        np.broadcast_to(obs_1d[:, None, None], (n_year, n_lat, n_lon)).copy(),
+        dims=["year", "lat", "lon"], coords=coords,
+    )
+    # By hand: years 0-3 → BN, 4-7 → NN, 8-11 → AN.
+    expected_label = np.repeat([0, 1, 2], 4)
+    fcst = np.zeros((n_year, 3, n_lat, n_lon))
+    for y in range(n_year):
+        fcst[y, expected_label[y], :, :] = 1.0
+    forecast = xr.DataArray(
+        fcst, dims=["year", "tercile", "lat", "lon"],
+        coords={**coords, "tercile": [0, 1, 2]},
+    )
+    score = GeneralizedROCMetric().compute(forecast, obs)
+    np.testing.assert_allclose(score, 1.0, atol=1e-9)
+
+
+def test_groc_alias_registered():
+    """Both 'generalized_roc' and 'groc' resolve to the same class."""
+    from deepscale.registry import get_metric
+    from deepscale.metrics.generalized_roc import GeneralizedROCMetric
+
+    assert get_metric("generalized_roc") is GeneralizedROCMetric
+    assert get_metric("groc") is GeneralizedROCMetric
+
+
+# ===================================================================
+# 21. Ensemble safeguards (#58, #59)
+# ===================================================================
+
+def test_apply_shrinkage_blend():
+    """w_shrunk = (1 - λ) * w + λ / N. λ=0 returns w; λ=1 returns uniform."""
+    from deepscale.ensemble import _apply_shrinkage
+
+    w = np.array([0.8, 0.2])
+    np.testing.assert_allclose(_apply_shrinkage(w, 0.0), w)
+    np.testing.assert_allclose(_apply_shrinkage(w, 1.0), [0.5, 0.5])
+    np.testing.assert_allclose(_apply_shrinkage(w, 0.5), [0.65, 0.35])
+
+
+def test_effective_n_degenerate():
+    """effective_N = 1 / sum(w**2). Uniform → N; (0.95, 0.05, 0, 0, 0) → ~1.11."""
+    from deepscale.ensemble import _effective_n
+
+    n = 5
+    uniform = np.full(n, 1.0 / n)
+    np.testing.assert_allclose(_effective_n(uniform), n)
+
+    degenerate = np.array([0.95, 0.05, 0.0, 0.0, 0.0])
+    np.testing.assert_allclose(_effective_n(degenerate), 1 / (0.95**2 + 0.05**2), rtol=1e-6)
+
+
+def test_strategy_fit_uniform():
+    """uniform.fit returns 1/N for any input."""
+    from deepscale.registry import get_strategy
+
+    n_year, n_lat, n_lon = 5, 3, 3
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    arrs = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon), dims=["year", "lat", "lon"], coords=coords)
+        for _ in range(3)
+    ]
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon), dims=["year", "lat", "lon"], coords=coords)
+    w = get_strategy("uniform")().fit(arrs, obs)
+    np.testing.assert_allclose(w, [1/3, 1/3, 1/3])
+
+
+def test_strategy_fit_drop_worst_indicator():
+    """drop_worst.fit returns indicator weights for the kept members.
+
+    Uses a noise-only obs so per-member skill is purely sample-driven;
+    we rank synthetically by hand-constructing one member to be much
+    closer to obs than the others.
+    """
+    from deepscale.registry import get_strategy
+    from deepscale.tercile import to_tercile_cv
+
+    np.random.seed(0)
+    n_year, n_lat, n_lon = 12, 3, 3
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    # Member 1 is obs itself (perfect), members 0 and 2 are noise.
+    arrs_continuous = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon), dims=["year", "lat", "lon"], coords=coords),
+        obs,
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon), dims=["year", "lat", "lon"], coords=coords),
+    ]
+    forecasts = [to_tercile_cv(a, obs) for a in arrs_continuous]
+    w = get_strategy("drop_worst")().fit(forecasts, obs, n_drop=1)
+    # n_drop=1: exactly one weight should be zero, the other two equal 0.5.
+    assert (w == 0).sum() == 1
+    nonzero = w[w > 0]
+    np.testing.assert_allclose(nonzero, [0.5, 0.5])
+    # Member 1 (the perfect one) must be among the kept members.
+    assert w[1] == 0.5
+
+
+def test_strategy_fit_skill_weighted_clipped():
+    """skill_weighted.fit clips negative skill to 0 and normalises."""
+    from deepscale.registry import get_strategy
+    from deepscale.tercile import to_tercile_cv
+
+    np.random.seed(0)
+    n_year, n_lat, n_lon = 12, 3, 3
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    # One perfect member, one anti-correlated member.
+    arrs_continuous = [obs, -obs]
+    forecasts = [to_tercile_cv(a, obs) for a in arrs_continuous]
+    w = get_strategy("skill_weighted")().fit(forecasts, obs)
+    assert w.sum() == pytest.approx(1.0)
+    # Perfect member dominates; anti-correlated member clips to near 0.
+    # Don't pin an exact equality — the anti-tercile's RPSS can be slightly
+    # positive on small grids/seeds; the contract is "perfect > anti".
+    assert w[0] > 0.8
+    assert w[1] < 0.2
+
+
+def test_strategy_self_shrinks_flags():
+    """Only bma reports self_shrinks() == True."""
+    from deepscale.registry import get_strategy
+
+    assert get_strategy("uniform")().self_shrinks() is False
+    assert get_strategy("drop_worst")().self_shrinks() is False
+    assert get_strategy("skill_weighted")().self_shrinks() is False
+    assert get_strategy("bma")().self_shrinks() is True
+
+
+def test_strategy_uniform_combine_with_weights():
+    """uniform.combine respects an explicit weights= kwarg (used by the
+    nested-CV loop to apply a non-uniform vector through the same code path).
+    """
+    from deepscale.registry import get_strategy
+
+    coords = {"lat": [0], "lon": [0]}
+    a = xr.DataArray([[1.0]], dims=["lat", "lon"], coords=coords)
+    b = xr.DataArray([[3.0]], dims=["lat", "lon"], coords=coords)
+    out = get_strategy("uniform")().combine([a, b], weights=np.array([0.25, 0.75]))
+    np.testing.assert_allclose(out.values, [[2.5]])
+
+
+def test_strategy_drop_worst_combine_with_weights():
+    """drop_worst.combine respects an explicit weights= kwarg (skipping its
+    own ranking logic)."""
+    from deepscale.registry import get_strategy
+
+    coords = {"lat": [0], "lon": [0]}
+    arrs = [
+        xr.DataArray([[1.0]], dims=["lat", "lon"], coords=coords),
+        xr.DataArray([[3.0]], dims=["lat", "lon"], coords=coords),
+        xr.DataArray([[5.0]], dims=["lat", "lon"], coords=coords),
+    ]
+    # weights drop the second member entirely
+    out = get_strategy("drop_worst")().combine(arrs, weights=np.array([0.5, 0.0, 0.5]))
+    np.testing.assert_allclose(out.values, [[3.0]])
+
+
+def test_ensemble_no_optimize_returns_trivial_ensemble_result():
+    """ensemble(..., optimize_ensemble=False) wraps the strategy's combine()
+    in an EnsembleResult with the trivial-safeguard fields."""
+    from deepscale.ensemble import ensemble, EnsembleResult
+
+    coords = {"lat": [0], "lon": [0]}
+    a = xr.DataArray([[2.0]], dims=["lat", "lon"], coords=coords, name="A")
+    b = xr.DataArray([[4.0]], dims=["lat", "lon"], coords=coords, name="B")
+
+    result = ensemble([a, b], obs=None, strategy="uniform")
+    assert isinstance(result, EnsembleResult)
+    np.testing.assert_allclose(result.forecast.values, [[3.0]])
+    np.testing.assert_allclose(result.weights, [0.5, 0.5])
+    assert result.member_names == ["A", "B"]
+    assert result.member_cv_skill == {}
+    assert result.effective_n == pytest.approx(2.0)
+    assert result.gate_passed is True
+    assert result.shrinkage_lambda == 0.0
+    assert result.safeguards_applied == {}
+
+
+def test_ensemble_optimize_self_shrinking_strategy_skips_shrinkage():
+    """A self_shrinks() strategy must not get outer-loop shrinkage on top."""
+    from deepscale.ensemble import ensemble
+    from deepscale.strategies.base import StrategyBase
+    from deepscale.registry import register_strategy
+
+    @register_strategy("test_self_shrinking")
+    class _SS(StrategyBase):
+        def combine(self, forecasts, obs=None, *, weights=None, **kwargs):
+            from deepscale.strategies.uniform import _as_array
+            arrays = [_as_array(f) for f in forecasts]
+            if weights is None:
+                return sum(arrays) / len(arrays)
+            w = np.asarray(weights, dtype=float)
+            result = arrays[0] * float(w[0])
+            for arr, wi in zip(arrays[1:], w[1:]):
+                result = result + arr * float(wi)
+            return result
+
+        def fit(self, forecasts, obs, years=None, *, primary_metric="rpss", **kwargs):
+            return np.full(len(forecasts), 1.0 / len(forecasts))
+
+        def self_shrinks(self):
+            return True
+
+    np.random.seed(0)
+    n_year, n_lat, n_lon = 8, 2, 2
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    arrs = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords)
+        for _ in range(3)
+    ]
+
+    result = ensemble(arrs, obs, strategy="test_self_shrinking",
+                      optimize_ensemble=True, primary_metric="pearson_r")
+    assert result.shrinkage_lambda == 0.0
+    assert result.safeguards_applied.get("shrinkage_skipped_for_self_shrinking") is True
+
+
+def test_ensemble_optimize_effective_n_floor_fallback():
+    """A strategy whose fit returns a degenerate weight vector triggers the
+    floor and falls back to uniform per-fold."""
+    from deepscale.ensemble import ensemble
+    from deepscale.strategies.base import StrategyBase
+    from deepscale.registry import register_strategy
+
+    @register_strategy("test_degenerate")
+    class _Deg(StrategyBase):
+        def combine(self, forecasts, obs=None, *, weights=None, **kwargs):
+            from deepscale.strategies.uniform import _as_array
+            arrays = [_as_array(f) for f in forecasts]
+            if weights is None:
+                return sum(arrays) / len(arrays)
+            w = np.asarray(weights, dtype=float)
+            result = arrays[0] * float(w[0])
+            for arr, wi in zip(arrays[1:], w[1:]):
+                result = result + arr * float(wi)
+            return result
+
+        def fit(self, forecasts, obs, years=None, *, primary_metric="rpss", **kwargs):
+            # Degenerate (effective_N ~ 1.1): forces the floor to fire.
+            n = len(forecasts)
+            w = np.zeros(n)
+            w[0] = 0.95
+            w[1] = 0.05
+            return w
+
+    np.random.seed(1)
+    n_year, n_lat, n_lon = 8, 2, 2
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    arrs = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords)
+        for _ in range(5)
+    ]
+
+    result = ensemble(arrs, obs, strategy="test_degenerate",
+                      optimize_ensemble=True, primary_metric="pearson_r",
+                      safeguards={"shrinkage": 0.0})  # disable shrinkage so floor is what fires
+    fired = result.safeguards_applied.get("min_effective_n_floor_fired_on", [])
+    assert len(fired) > 0, f"expected the floor to fire on at least one fold, got {fired}"
+
+
+def test_ensemble_optimize_recovers_known_better_member():
+    """skill_weighted with optimize_ensemble=True concentrates weight on the
+    member that actually beats the others on the primary metric.
+
+    Override min_effective_n=2 so the floor doesn't fight the test's premise:
+    with 3 members and shrinkage=0.5, the best achievable effective_N for a
+    perfect-singleton fit is 2 (post-shrinkage weights [1/6, 2/3, 1/6]). The
+    default floor of 3 would force a uniform fallback regardless of recovery
+    quality — testing that here would just be testing the floor, not recovery.
+    """
+    from deepscale.ensemble import ensemble
+
+    np.random.seed(2)
+    n_year, n_lat, n_lon = 12, 3, 3
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    # Member 1 is obs (perfect on the continuous scale → high primary skill).
+    # Members 0 and 2 are noise.
+    arrs = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords),
+        obs,
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords),
+    ]
+
+    result = ensemble(arrs, obs, strategy="skill_weighted",
+                      optimize_ensemble=True, primary_metric="pearson_r",
+                      safeguards={"min_effective_n": 2})
+    assert result.weights[1] > result.weights[0]
+    assert result.weights[1] > result.weights[2]
+    # Diagnostics populated.
+    assert len(result.member_cv_skill) == 3
+    assert "gate_outer_cv" in result.safeguards_applied
+    assert "uniform_outer_cv" in result.safeguards_applied
+
+
+def test_ensemble_optimize_all_equal_members_returns_uniform():
+    """With no genuine signal differentiating members, optimisation must not
+    over-concentrate weight. Identical members → fit returns uniform weights
+    (so the optimised and uniform paths are literally identical and the gate
+    accepts with margin 0). Either way, the result is uniform — that's the
+    safeguard's intent.
+    """
+    from deepscale.ensemble import ensemble
+
+    np.random.seed(3)
+    n_year, n_lat, n_lon = 8, 2, 2
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    base = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                        dims=["year", "lat", "lon"], coords=coords)
+    arrs = [base.copy(), base.copy(), base.copy()]
+
+    result = ensemble(arrs, obs, strategy="skill_weighted",
+                      optimize_ensemble=True, primary_metric="pearson_r")
+    np.testing.assert_allclose(result.weights, [1/3, 1/3, 1/3], atol=0.15)
+    # Diagnostics always populated for the nested-CV path.
+    assert "gate_outer_cv" in result.safeguards_applied
+    assert "uniform_outer_cv" in result.safeguards_applied
+
+
+def test_ensemble_optimize_gate_fails_with_perverse_strategy():
+    """A strategy whose fit picks adversarial weights (concentrating on a
+    single noise member) makes the optimised outer-CV worse than uniform,
+    forcing the gate to fail → uniform fallback + RuntimeWarning."""
+    import warnings as _warnings
+    from deepscale.ensemble import ensemble
+    from deepscale.strategies.base import StrategyBase
+    from deepscale.registry import register_strategy
+
+    @register_strategy("test_winner_take_all")
+    class _WTA(StrategyBase):
+        def combine(self, forecasts, obs=None, *, weights=None, **kwargs):
+            from deepscale.strategies.uniform import _as_array
+            arrays = [_as_array(f) for f in forecasts]
+            if weights is None:
+                return sum(arrays) / len(arrays)
+            w = np.asarray(weights, dtype=float)
+            result = arrays[0] * float(w[0])
+            for arr, wi in zip(arrays[1:], w[1:]):
+                result = result + arr * float(wi)
+            return result
+
+        def fit(self, forecasts, obs, years=None, *, primary_metric="pearson_r", **kwargs):
+            n = len(forecasts)
+            w = np.zeros(n)
+            w[0] = 1.0  # always pick member 0 — adversarial when 0 is noise
+            return w
+
+    np.random.seed(5)
+    n_year, n_lat, n_lon = 10, 3, 3
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    # Member 0 is anti-correlated with obs; members 1 and 2 are noise. Winner-
+    # take-all picks the anti-correlated member → pooled opt-path pearson_r
+    # ≈ -1, while uniform averages anti-correlation with noise → ≈ -1/3. So
+    # unif_cv > opt_cv reliably and the gate fails for the right reason. (See
+    # the "the flaw" note in the Task 5–6 instructions: pooling-then-scoring
+    # changes which fixtures provably trigger the gate.)
+    arrs = [
+        xr.DataArray(-obs.values, dims=["year", "lat", "lon"], coords=coords),
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords),
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords),
+    ]
+
+    with _warnings.catch_warnings(record=True) as caught:
+        _warnings.simplefilter("always")
+        result = ensemble(arrs, obs, strategy="test_winner_take_all",
+                          optimize_ensemble=True, primary_metric="pearson_r",
+                          safeguards={"min_effective_n": 0})  # disable floor; we want gate to fire
+    assert result.gate_passed is False, (
+        f"expected gate failure; opt={result.safeguards_applied.get('gate_outer_cv')}, "
+        f"unif={result.safeguards_applied.get('uniform_outer_cv')}"
+    )
+    np.testing.assert_allclose(result.weights, [1/3, 1/3, 1/3])
+    gate_warnings = [str(w.message) for w in caught if "gate" in str(w.message).lower()]
+    assert gate_warnings, "expected a gate-failure RuntimeWarning"
+
+
+def test_ensemble_leaky_pipeline_overstates_skill():
+    """Without nested CV, in-sample skill is optimistic. The diagnostics
+    should still record the outer-CV scores so users can compare."""
+    from deepscale.ensemble import ensemble
+
+    np.random.seed(4)
+    n_year, n_lat, n_lon = 10, 2, 2
+    coords = {"year": np.arange(n_year), "lat": np.arange(n_lat), "lon": np.arange(n_lon)}
+    obs = xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                       dims=["year", "lat", "lon"], coords=coords)
+    arrs = [
+        xr.DataArray(np.random.randn(n_year, n_lat, n_lon),
+                     dims=["year", "lat", "lon"], coords=coords)
+        for _ in range(4)
+    ]
+
+    # Honest path: full safeguards.
+    honest = ensemble(arrs, obs, strategy="skill_weighted",
+                     optimize_ensemble=True, primary_metric="pearson_r")
+    # Leaky path: explicit override to disable nested CV and gate. Reproduces
+    # the silent-bug configuration the safeguards exist to prevent.
+    leaky = ensemble(arrs, obs, strategy="skill_weighted",
+                     optimize_ensemble=True, primary_metric="pearson_r",
+                     safeguards={"nested_cv": False, "gate": False,
+                                 "shrinkage": 0.0, "min_effective_n": 0})
+    # With pure noise, neither path should produce a real signal; what we're
+    # confirming is that the override path completes (and that its diagnostics
+    # do not include outer-CV scores, since nested CV was disabled).
+    assert leaky.safeguards_applied.get("nested_cv") is False
+    assert "gate_outer_cv" not in leaky.safeguards_applied
+    # Honest path did run nested CV.
+    assert honest.safeguards_applied.get("nested_cv") is True
+    assert "gate_outer_cv" in honest.safeguards_applied
