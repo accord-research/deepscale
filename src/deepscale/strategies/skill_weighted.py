@@ -22,7 +22,22 @@ from .drop_worst import _resolve_scores
 
 @register_strategy("skill_weighted")
 class SkillWeightedStrategy(StrategyBase):
-    def combine(self, forecasts, obs=None, scores=None, weights=None, **kwargs):
+    def fit(self, forecasts, obs, years=None, *, primary_metric="rpss", scores=None, **kwargs):
+        """Per-member skill clipped to ≥0 and normalised. All-zero falls back to uniform."""
+        from .drop_worst import _per_member_skill
+        n = len(forecasts)
+        if scores is None:
+            try:
+                scores = _resolve_scores(forecasts, None)
+            except ValueError:
+                scores = _per_member_skill(forecasts, obs, years, primary_metric)
+        w = np.clip(np.asarray(scores, dtype=float), a_min=0.0, a_max=None)
+        total = float(w.sum())
+        if total <= 0.0:
+            return np.full(n, 1.0 / n)
+        return w / total
+
+    def combine(self, forecasts, obs=None, *, scores=None, weights=None, **kwargs):
         arrays = [_as_array(f) for f in forecasts]
         if weights is not None:
             if len(weights) != len(forecasts):

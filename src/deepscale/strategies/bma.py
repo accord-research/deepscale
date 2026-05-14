@@ -40,7 +40,7 @@ class BMAStrategy(StrategyBase):
         self.max_iter = max_iter
         self.tol = tol
 
-    def fit(self, hindcasts, obs):
+    def _fit_em(self, hindcasts, obs):
         """Fit BMA weights and variances by EM.
 
         Parameters
@@ -92,7 +92,21 @@ class BMAStrategy(StrategyBase):
         w = w / w.sum()
         return w, sigma2
 
-    def combine(self, forecasts, obs=None, hindcasts=None, weights=None, **kwargs):
+    def fit(self, forecasts, obs, years=None, *, primary_metric="rpss", **kwargs):
+        """BMA weights via EM. Restricts to ``years`` if provided."""
+        if years is not None:
+            obs_y = obs.sel(year=list(years))
+            hindcasts_y = [_as_array(f).sel(year=list(years)) for f in forecasts]
+        else:
+            obs_y = obs
+            hindcasts_y = [_as_array(f) for f in forecasts]
+        w, _ = self._fit_em(hindcasts_y, obs_y)
+        return w
+
+    def self_shrinks(self):
+        return True
+
+    def combine(self, forecasts, obs=None, *, hindcasts=None, weights=None, **kwargs):
         arrays = [_as_array(f) for f in forecasts]
         if weights is None:
             if hindcasts is None or obs is None:
@@ -105,7 +119,7 @@ class BMAStrategy(StrategyBase):
                     f"hindcasts has {len(hindcasts)} entries, "
                     f"but {len(forecasts)} forecasts."
                 )
-            weights, _ = self.fit(hindcasts, obs)
+            weights, _ = self._fit_em(hindcasts, obs)
         else:
             weights = np.asarray(weights, dtype=float)
             if weights.sum() <= 0:
