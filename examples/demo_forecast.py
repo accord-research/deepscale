@@ -170,7 +170,7 @@ def main() -> None:
         cv_fcst, obs,
         metrics=[
             "rpss", "pearson_r", "spearman", "hss",
-            "2afc", "roc_area_below_normal", "roc_area_above_normal",
+            "2afc", "roc",
             "generalized_roc", "reliability",
         ],
         spatial=True,
@@ -188,6 +188,19 @@ def main() -> None:
         print(f"    {metric:20s}: {value:+.3f}")
     for metric, value in report_det.scores.items():
         print(f"    {metric:20s}: {value:+.3f}")
+
+    # ---- §22.3 PDF report (single-method) -----------------------------------
+    _pdf_output_dir = REPO_ROOT / "deepscale" / "examples" / "output"
+    os.makedirs(_pdf_output_dir, exist_ok=True)
+    report.metadata = {
+        "region": "East Africa (5°S–5°N, 33–42°E)",
+        "target": TARGET,
+        "init": "February",
+        "predictand": "2m air temperature",
+        "method": best.method.upper(),
+    }
+    report.to_pdf(_pdf_output_dir / "single.pdf")
+    print(f"    Wrote {_pdf_output_dir / 'single.pdf'}")
 
     # ---- Plots --------------------------------------------------------------
     try:
@@ -293,10 +306,10 @@ def main() -> None:
         ax_bar = fig.add_subplot(gs[0, 2])
         # Signed skill chart: only keep metrics on the [-1, 1] scale.
         # RMSE has a different scale (deg C); reliability is calibration error;
-        # 2afc + roc_area_* are [0, 1] discrimination skills (next chart).
+        # 2afc + roc_* are [0, 1] discrimination skills (next chart).
         signed_excludes = (
             "rmse", "root_mean_squared_error", "reliability",
-            "2afc", "roc_area_below_normal", "roc_area_above_normal",
+            "2afc", "roc_bn", "roc_nn", "roc_an",
         )
         metrics_to_plot = {
             k: v for k, v in report.scores.items()
@@ -319,7 +332,7 @@ def main() -> None:
         ax_bar2 = fig.add_subplot(gs[0, 3])
         disc_metrics = {
             k: v for k, v in report.scores.items()
-            if k in ("2afc", "roc_area_below_normal", "roc_area_above_normal")
+            if k in ("2afc", "roc_bn", "roc_nn", "roc_an")
         }
         if disc_metrics:
             names2 = list(disc_metrics.keys())

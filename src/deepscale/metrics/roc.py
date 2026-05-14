@@ -5,8 +5,12 @@ from ..registry import register_metric
 from .rpss import _cpt_boundaries
 
 
-def _roc_per_category(forecast, obs, cat_idx):
-    """ROC area for a single tercile category (0=BN, 1=NN, 2=AN). Returns float."""
+def _roc_arrays(forecast, obs, cat_idx):
+    """Return (fpr, tpr, area) for one tercile category.
+
+    cat_idx: 0=BN, 1=NN, 2=AN. Used by both ROCMetric.compute() (which keeps
+    only the area) and ROCMetric.compute_diagram() (which keeps the curve).
+    """
     t33, t67 = _cpt_boundaries(obs.values)
     spatial_dims = [d for d in obs.dims if d != "year"]
     spatial_coords = {k: v for k, v in obs.coords.items()
@@ -23,7 +27,9 @@ def _roc_per_category(forecast, obs, cat_idx):
     prob_fcst = prob_fcst[mask]
 
     if len(binary_obs) == 0 or binary_obs.sum() == 0 or binary_obs.sum() == len(binary_obs):
-        return 0.5
+        # Degenerate; mirror the prior scalar return of 0.5 area with a
+        # trivial diagonal curve so callers receive a usable shape.
+        return np.array([0.0, 1.0]), np.array([0.0, 1.0]), 0.5
 
     order = np.argsort(-prob_fcst)
     binary_obs = binary_obs[order]
@@ -35,7 +41,13 @@ def _roc_per_category(forecast, obs, cat_idx):
     tpr = tp / n_pos
     fpr = fp / n_neg
 
-    return float(np.trapezoid(tpr, fpr))
+    return fpr, tpr, float(np.trapezoid(tpr, fpr))
+
+
+def _roc_per_category(forecast, obs, cat_idx):
+    """Back-compat shim — area only. Kept so existing imports don't break."""
+    _, _, area = _roc_arrays(forecast, obs, cat_idx)
+    return area
 
 
 @register_metric("roc")
@@ -46,6 +58,13 @@ class ROCMetric(MetricBase):
             "roc_nn": _roc_per_category(forecast, obs, 1),
             "roc_an": _roc_per_category(forecast, obs, 2),
         }
+
+    def compute_diagram(self, forecast, obs, **kwargs):
+        out = {}
+        for label, cat_idx in (("bn", 0), ("nn", 1), ("an", 2)):
+            fpr, tpr, area = _roc_arrays(forecast, obs, cat_idx)
+            out[label] = {"fpr": fpr, "tpr": tpr, "area": area}
+        return out
 
 
 @register_metric("roc_area_below_normal")
