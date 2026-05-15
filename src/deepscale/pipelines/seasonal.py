@@ -168,6 +168,11 @@ def seasonal_mme(
         metadata={**det_report.metadata, **prob_report.metadata},
         diagrams={**det_report.diagrams, **prob_report.diagrams},
     )
+    # Surface ensemble-level diagnostics into the SkillReport's diagrams
+    # payload so renderers (svslrf) can pick them up via the same convention
+    # used for roc/reliability diagrams.
+    if ensemble_result.member_contributions is not None:
+        skill_report.diagrams["member_contributions"] = ensemble_result.member_contributions
 
     # Build a single-year MME forecast (member dim = each per-model forecast).
     forecast_members = xr.concat(

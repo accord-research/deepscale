@@ -94,3 +94,34 @@ def test_two_tracks_match_manually_constructed_mme():
     assert result.ensemble_result.forecast.dims[0] == "year"
     assert "lat" in result.ensemble_result.forecast.dims
     assert "lon" in result.ensemble_result.forecast.dims
+
+
+def test_seasonal_mme_surfaces_member_contributions():
+    """seasonal_mme() should copy ensemble_result.member_contributions into
+    skill_report.diagrams['member_contributions']."""
+    rng = np.random.default_rng(13)
+    years = list(range(2000, 2020))
+    obs = _grid(rng.standard_normal((20, 4, 4)), year_coords=years, name="obs")
+
+    def _h(seed):
+        rr = np.random.default_rng(seed)
+        return _make_predictor(
+            rr.standard_normal((20, 3, 4, 4)),
+            year_coords=years, name="m",
+        )
+
+    from deepscale import seasonal_mme
+    result = seasonal_mme(
+        {"prcp": {"A": (_h(1), None), "B": (_h(2), None)},
+         "sst":  {"A": (_h(3), None), "B": (_h(4), None)}},
+        obs, method="cca", cpt_args={"n_modes": 2}, verbose=False,
+    )
+
+    # Live on EnsembleResult
+    mc = result.ensemble_result.member_contributions
+    assert mc is not None
+    assert set(mc.keys()) == {"prcp__A", "prcp__B", "sst__A", "sst__B"}
+
+    # Surfaced into the SkillReport's diagrams payload
+    surfaced = result.skill_report.diagrams.get("member_contributions")
+    assert surfaced is mc

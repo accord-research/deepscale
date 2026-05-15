@@ -423,3 +423,119 @@ def comparison_map_grid_page(pdf, metric, maps):
 
     pdf.savefig(fig)
     plt.close(fig)
+
+
+def member_contributions_page(pdf, member_contributions):
+    """One US-letter page: per-member contribution diagnostics.
+
+    Top half: horizontal bar chart of correlation_with_mme_mean per member,
+    sorted descending. Member labels on the y-axis; numeric value annotated
+    at the end of each bar. NaN values render with no bar (matplotlib
+    skips them).
+
+    Bottom half: grid of skill_delta spatial maps (RdBu_r, shared range
+    [-0.5, 0.5] for cross-panel comparability), one panel per member.
+    """
+    require_optional("matplotlib", _HINT)
+    require_optional("cartopy", _HINT)
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
+    import numpy as np
+
+    members = list(member_contributions.keys())
+    n = len(members)
+    if n == 0:
+        return
+
+    # Sort by correlation descending (NaN sorts to the bottom).
+    def _is_nan(v):
+        return v is None or (isinstance(v, float) and np.isnan(v))
+
+    def _corr(name):
+        v = member_contributions[name]["correlation_with_mme_mean"]
+        return float("-inf") if _is_nan(v) else v
+
+    members_sorted = sorted(members, key=_corr, reverse=True)
+    corrs = [member_contributions[m]["correlation_with_mme_mean"] for m in members_sorted]
+
+    # Map grid sizing — choose ncols to minimize empty slots for small n.
+    # 2×2 reads better than a 3-wide row with a single trailing panel.
+    ncols = 2 if n <= 4 else 3
+    nrows_maps = (n + ncols - 1) // ncols
+
+    # Top half height grows with member count (~0.35" per bar, with a floor).
+    bar_height = max(2.5, 0.35 * n + 1.0)
+    map_height = 3.2 * nrows_maps
+    total_height = min(_LETTER_H, bar_height + map_height + 1.5)
+    fig = plt.figure(figsize=(_LETTER_W, total_height))
+
+    # Layout constants for the bottom (map) band. Reserve right margin for
+    # the shared colorbar.
+    map_left, map_right = 0.06, 0.86
+    panel_dx = (map_right - map_left) / ncols
+    panel_w = panel_dx * 0.92   # small gap between columns
+    panel_h_inch = 2.6
+
+    # ---- Top: bar chart of correlations ----
+    # Generous left margin so long member labels (e.g. "sst__ECMWF_C") fit.
+    bar_top = 0.05 + map_height / total_height
+    ax_bar = fig.add_axes([0.22, bar_top + 0.05, 0.66, (bar_height - 0.5) / total_height])
+    y_pos = np.arange(len(members_sorted))
+    finite_corrs = [c for c in corrs if not _is_nan(c)]
+    if finite_corrs:
+        ax_bar.barh(
+            y_pos,
+            [0.0 if _is_nan(c) else c for c in corrs],
+            color="#4f7fbf",
+        )
+    ax_bar.set_yticks(y_pos)
+    ax_bar.set_yticklabels(members_sorted, fontsize=9)
+    ax_bar.invert_yaxis()
+    ax_bar.set_xlim(
+        min(-0.1, min(finite_corrs) - 0.05) if finite_corrs else -1.0,
+        max(1.0, max(finite_corrs) + 0.05) if finite_corrs else 1.0,
+    )
+    ax_bar.set_xlabel("Correlation with MME mean", fontsize=10)
+    ax_bar.axvline(0.0, color="black", linewidth=0.6, linestyle=":")
+    ax_bar.set_title("Member contributions", fontsize=14, fontweight="bold", loc="left", pad=10)
+
+    # Annotate values at the end of each bar.
+    for i, c in enumerate(corrs):
+        label = "NaN" if _is_nan(c) else f"{c:.2f}"
+        x_anchor = 0.0 if _is_nan(c) else c
+        ax_bar.text(x_anchor, i, f"  {label}", va="center", fontsize=8)
+
+    # ---- Bottom: skill_delta map grid ----
+    cmap, vmin, vmax = "RdBu_r", -0.5, 0.5
+    im = None
+    for i, name in enumerate(members_sorted):
+        sd = member_contributions[name]["skill_delta"]
+        row = i // ncols
+        col = i % ncols
+        # Centre the (possibly partial) row horizontally so a half-row
+        # doesn't leave conspicuous empty cells.
+        items_in_row = min(ncols, n - row * ncols)
+        row_offset = (ncols - items_in_row) * panel_dx / 2.0
+        left = map_left + row_offset + col * panel_dx
+        bottom_inch = (nrows_maps - 1 - row) * 3.2 + 0.6
+        bottom = bottom_inch / total_height
+        height = panel_h_inch / total_height
+        ax = fig.add_axes([left, bottom, panel_w, height], projection=ccrs.PlateCarree())
+        ax.coastlines(linewidth=0.6)
+        im = ax.pcolormesh(
+            sd["lon"], sd["lat"], sd.values,
+            transform=ccrs.PlateCarree(),
+            cmap=cmap, vmin=vmin, vmax=vmax, shading="auto",
+        )
+        ax.set_title(name, fontsize=10)
+
+    # Shared colorbar in the reserved right margin. Short label keeps the
+    # text fully on the page.
+    if im is not None:
+        cbar_height = min(0.7, map_height / total_height * 0.7)
+        cbar_ax = fig.add_axes([0.88, 0.10, 0.012, cbar_height])
+        cb = fig.colorbar(im, cax=cbar_ax)
+        cb.set_label("Δ Pearson r (MME − member)", fontsize=9)
+
+    pdf.savefig(fig)
+    plt.close(fig)

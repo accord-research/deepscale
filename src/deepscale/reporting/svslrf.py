@@ -6,7 +6,8 @@ conventions. All pages are US-letter portrait for consistent dimensions:
   1. Cover + mandatory triplet (one combined page).
   2. ROC curves + reliability diagram (one combined page, side-by-side).
   3. Spatial maps grid (one page, only if spatial maps are present).
-  4. Secondary metrics table (only if secondary scores are present).
+  4. Member contributions (only if diagrams['member_contributions'] present).
+  5. Secondary metrics table (only if secondary scores are present).
 """
 
 from .._optional import require_optional
@@ -47,6 +48,10 @@ def render(report, path):
 
         if spatial_maps:
             _pages.map_grid_page(pdf, spatial_maps)
+
+        member_contribs = report.diagrams.get("member_contributions")
+        if member_contribs:
+            _pages.member_contributions_page(pdf, member_contribs)
 
         if secondary_scores:
             _pages.scalar_table_page(pdf, secondary_scores, title="Secondary metrics")

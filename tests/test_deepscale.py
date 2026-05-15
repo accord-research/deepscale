@@ -3212,6 +3212,67 @@ def test_skill_report_to_pdf_unknown_style_raises(tmp_path):
         report.to_pdf(tmp_path / "x.pdf", style="not_a_style")
 
 
+def test_svslrf_includes_member_contributions_page_when_present(tmp_path):
+    """When report.diagrams['member_contributions'] is present, the PDF
+    gains an extra page vs the same report without it."""
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    pypdf = pytest.importorskip("pypdf")
+    import numpy as np
+    import xarray as xr
+    from deepscale.skill import SkillReport
+    from deepscale.reporting.svslrf import render
+
+    # Minimal report — scores + a synthetic member_contributions diagram.
+    coords = {"lat": np.linspace(-5, 5, 4), "lon": np.linspace(30, 40, 4)}
+    member_contribs = {
+        "A": {
+            "correlation_with_mme_mean": 0.8,
+            "skill_delta": xr.DataArray(
+                np.full((4, 4), -0.1), dims=("lat", "lon"), coords=coords,
+            ),
+        },
+        "B": {
+            "correlation_with_mme_mean": 0.4,
+            "skill_delta": xr.DataArray(
+                np.full((4, 4), 0.1), dims=("lat", "lon"), coords=coords,
+            ),
+        },
+    }
+
+    base = SkillReport(scores={"rpss": 0.3})
+    base.metadata = {"region": "Test"}
+    base_path = tmp_path / "base.pdf"
+    render(base, base_path)
+    base_pages = len(pypdf.PdfReader(str(base_path)).pages)
+
+    with_mc = SkillReport(scores={"rpss": 0.3})
+    with_mc.metadata = {"region": "Test"}
+    with_mc.diagrams = {"member_contributions": member_contribs}
+    mc_path = tmp_path / "with_mc.pdf"
+    render(with_mc, mc_path)
+    mc_pages = len(pypdf.PdfReader(str(mc_path)).pages)
+
+    assert mc_pages == base_pages + 1
+
+
+def test_svslrf_omits_member_contributions_when_absent(tmp_path):
+    """When member_contributions is not in diagrams, no extra page is added.
+    This is the negative case of the test above."""
+    pytest.importorskip("matplotlib")
+    pypdf = pytest.importorskip("pypdf")
+    from deepscale.skill import SkillReport
+    from deepscale.reporting.svslrf import render
+
+    report = SkillReport(scores={"rpss": 0.3})
+    report.metadata = {"region": "Test"}
+    path = tmp_path / "no_mc.pdf"
+    render(report, path)
+    # cover+triplet only; no diagrams, no spatial, no secondary.
+    pages = len(pypdf.PdfReader(str(path)).pages)
+    assert pages == 1
+
+
 def test_skill_compare_basic(climatology_forecast, perfect_tercile_forecast, synthetic_obs):
     from deepscale.compare import skill_compare, ComparisonReport
     from deepscale.skill import SkillReport
