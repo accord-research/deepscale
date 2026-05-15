@@ -34,8 +34,19 @@ from .._optional import require_optional
 _HINT = "pip install deepscale[plotting]"
 
 
+_LETTER_W, _LETTER_H = 8.5, 11.0  # US-letter portrait, inches
+
+
+def _ordered_metadata_keys(metadata):
+    preferred_order = ("region", "target", "init", "predictand", "method")
+    keys_in_order = [k for k in preferred_order if k in metadata]
+    extras = [k for k in metadata.keys() if k not in preferred_order]
+    keys_in_order.extend(extras)
+    return keys_in_order
+
+
 def title_page(pdf, *, title, subtitle, metadata):
-    """Title page: large title, optional subtitle, metadata key/value list.
+    """Title page on a full US-letter portrait sheet.
 
     Only keys present in metadata are rendered; missing keys are silently
     skipped (no '(unknown <key>)' placeholders). Known keys are rendered in
@@ -45,49 +56,97 @@ def title_page(pdf, *, title, subtitle, metadata):
     require_optional("matplotlib", _HINT)
     import matplotlib.pyplot as plt
 
-    # Render only keys present in metadata; preserve preferred order for known
-    # keys, then append any extras in insertion order.
-    preferred_order = ("region", "target", "init", "predictand", "method")
-    keys_in_order = [k for k in preferred_order if k in metadata]
-    extras = [k for k in metadata.keys() if k not in preferred_order]
-    keys_in_order.extend(extras)
-    n_rows = len(keys_in_order)
+    fig = plt.figure(figsize=(_LETTER_W, _LETTER_H))
 
-    # Size the page to its content rather than wasting a full US-letter sheet.
-    # title (0.5") + subtitle (0.5") + gap (0.5") + rows (0.45" each).
-    content_height = 0.5 + 0.5 + 0.5 + n_rows * 0.45
-    content_height = max(3.5, min(content_height, 11))  # clamp to [3.5", 11"]
-
-    fig = plt.figure(figsize=(8.5, content_height))
-
-    # Position everything from the top using inches → figure-fraction.
     def y_for_inch(top_inch):
-        return 1.0 - (top_inch / content_height)
+        return 1.0 - (top_inch / _LETTER_H)
 
-    fig.text(0.1, y_for_inch(0.7), title, fontsize=22, fontweight="bold")
+    fig.text(0.1, y_for_inch(0.9), title, fontsize=22, fontweight="bold")
     if subtitle:
-        fig.text(0.1, y_for_inch(1.1), subtitle, fontsize=14, color="#444")
+        fig.text(0.1, y_for_inch(1.4), subtitle, fontsize=14, color="#444")
 
-    top = 1.8
-    for key in keys_in_order:
+    top = 2.2
+    for key in _ordered_metadata_keys(metadata):
         value = metadata[key]
         fig.text(0.1, y_for_inch(top), f"{key.capitalize()}:", fontsize=11, fontweight="bold")
         fig.text(0.30, y_for_inch(top), str(value), fontsize=11)
-        top += 0.45  # 0.45 inches per row
+        top += 0.45
+
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def cover_and_triplet_page(pdf, *, title, subtitle, metadata, mandatory_scores):
+    """Cover page combined with the WMO mandatory-triplet table.
+
+    Top half of the page: title, subtitle, metadata key/value list.
+    Bottom half: the mandatory metrics table (rpss + ROC areas + reliability).
+    """
+    require_optional("matplotlib", _HINT)
+    import matplotlib.pyplot as plt
+
+    fig = plt.figure(figsize=(_LETTER_W, _LETTER_H))
+
+    def y_for_inch(top_inch):
+        return 1.0 - (top_inch / _LETTER_H)
+
+    fig.text(0.1, y_for_inch(0.9), title, fontsize=22, fontweight="bold")
+    if subtitle:
+        fig.text(0.1, y_for_inch(1.4), subtitle, fontsize=14, color="#444")
+
+    top = 2.2
+    for key in _ordered_metadata_keys(metadata):
+        value = metadata[key]
+        fig.text(0.1, y_for_inch(top), f"{key.capitalize()}:", fontsize=11, fontweight="bold")
+        fig.text(0.30, y_for_inch(top), str(value), fontsize=11)
+        top += 0.45
+
+    fig.text(0.1, y_for_inch(top + 0.4), "Mandatory triplet",
+             fontsize=16, fontweight="bold")
+
+    # Table axes positioned in the lower half of the page.
+    # ax rectangle is (left, bottom, width, height) in figure fraction.
+    table_top_inch = top + 0.9
+    table_height_inch = max(2.0, _LETTER_H - table_top_inch - 0.6)
+    ax = fig.add_axes([
+        0.1,
+        (_LETTER_H - table_top_inch - table_height_inch) / _LETTER_H,
+        0.7,
+        table_height_inch / _LETTER_H,
+    ])
+    ax.set_axis_off()
+    if mandatory_scores:
+        rows = [[k, f"{v:.4g}" if isinstance(v, (int, float)) else str(v)]
+                for k, v in mandatory_scores.items()]
+        table = ax.table(
+            cellText=rows,
+            colLabels=["Metric", "Value"],
+            cellLoc="left",
+            colLoc="left",
+            loc="upper left",
+            colWidths=[0.5, 0.4],
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(11)
+        table.scale(1, 1.4)
+    else:
+        ax.text(0.0, 1.0, "(no mandatory metrics available)",
+                fontsize=11, color="#888", va="top")
 
     pdf.savefig(fig)
     plt.close(fig)
 
 
 def scalar_table_page(pdf, scores, *, title="Metrics summary"):
-    """A single page showing metric → scalar values as a two-column table."""
+    """A full-letter page showing metric → scalar values as a two-column table.
+
+    The table is anchored at the top of the page; the rest is intentional
+    whitespace so the report keeps consistent page dimensions throughout.
+    """
     require_optional("matplotlib", _HINT)
     import matplotlib.pyplot as plt
 
-    n_rows = len(scores) + 1  # +1 for header row
-    content_height = 1.5 + 0.35 * n_rows  # title area + per-row height
-    content_height = max(3.0, min(content_height, 11))  # clamp to [3.0", 11"]
-    fig, ax = plt.subplots(figsize=(8.5, content_height))
+    fig, ax = plt.subplots(figsize=(_LETTER_W, _LETTER_H))
     ax.set_axis_off()
     ax.set_title(title, fontsize=16, fontweight="bold", loc="left", pad=20)
 
@@ -102,11 +161,11 @@ def scalar_table_page(pdf, scores, *, title="Metrics summary"):
             cellLoc="left",
             colLoc="left",
             loc="upper left",
-            colWidths=[0.35, 0.25],
+            colWidths=[0.5, 0.4],
         )
         table.auto_set_font_size(False)
         table.set_fontsize(11)
-        table.scale(1, 1.2)
+        table.scale(1, 1.4)
 
     pdf.savefig(fig)
     plt.close(fig)
@@ -177,6 +236,79 @@ def roc_page(pdf, roc_diagram):
     ax.grid(alpha=0.3)
     ax.set_aspect("equal")
 
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def diagrams_page(pdf, roc_diagram, reliability_diagram):
+    """One page: ROC curves on the left, reliability diagram on the right.
+
+    Either input may be None; if both are None, no page is produced.
+    """
+    if roc_diagram is None and reliability_diagram is None:
+        return
+
+    require_optional("matplotlib", _HINT)
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(1, 2, figsize=(_LETTER_W, _LETTER_W / 2 + 0.5))
+    cat_colors = {"bn": "tab:red", "nn": "tab:grey", "an": "tab:blue"}
+    cat_names = {"bn": "Below normal", "nn": "Normal", "an": "Above normal"}
+
+    ax = axes[0]
+    if roc_diagram:
+        for cat in ("bn", "nn", "an"):
+            entry = roc_diagram.get(cat)
+            if entry is None:
+                continue
+            ax.plot(
+                entry["fpr"], entry["tpr"],
+                color=cat_colors[cat], linewidth=1.5,
+                label=f"{cat_names[cat]} (area = {entry['area']:.2f})",
+            )
+        ax.plot([0, 1], [0, 1], "k--", linewidth=0.8, alpha=0.6, label="No skill")
+        ax.set_xlabel("False positive rate")
+        ax.set_ylabel("True positive rate")
+        ax.set_title("ROC curves (per tercile)")
+        ax.legend(loc="lower right", fontsize=9)
+    else:
+        ax.text(0.5, 0.5, "(ROC not available)", ha="center", va="center",
+                fontsize=11, color="#888")
+        ax.set_title("ROC curves (per tercile)")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.grid(alpha=0.3)
+    ax.set_aspect("equal")
+
+    ax = axes[1]
+    if reliability_diagram:
+        for entry in reliability_diagram:
+            cat = entry["tercile"]
+            bins = entry["bins"]
+            if not bins:
+                continue
+            xs = [b["mean_prob"] for b in bins]
+            ys = [b["obs_freq"] for b in bins]
+            sizes = [min(80, 12 + b["n"]) for b in bins]
+            ax.plot(xs, ys, "-", color=cat_colors.get(cat, "black"), linewidth=1.2)
+            ax.scatter(xs, ys, s=sizes, color=cat_colors.get(cat, "black"),
+                       label=cat_names.get(cat, cat))
+        ax.plot([0, 1], [0, 1], "k--", linewidth=0.8, alpha=0.6,
+                label="Perfect calibration")
+        ax.set_xlabel("Forecast probability")
+        ax.set_ylabel("Observed frequency")
+        ax.set_title("Reliability diagram")
+        ax.legend(loc="upper left", fontsize=9)
+    else:
+        ax.text(0.5, 0.5, "(Reliability not available)", ha="center", va="center",
+                fontsize=11, color="#888")
+        ax.set_title("Reliability diagram")
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.grid(alpha=0.3)
+    ax.set_aspect("equal")
+
+    fig.tight_layout()
     pdf.savefig(fig)
     plt.close(fig)
 

@@ -9,7 +9,11 @@ class RMSEMetric(MetricBase):
         if "member" in forecast.dims:
             forecast = forecast.mean("member")
         if "tercile" in forecast.dims:
-            forecast = forecast.mean("tercile")
+            raise ValueError(
+                "rmse requires a continuous-valued forecast; got a forecast "
+                "with a 'tercile' dim (tercile probabilities). Pass the "
+                "deterministic ensemble forecast instead."
+            )
 
         sq_err = (forecast - obs) ** 2
         rmse = np.sqrt(sq_err.mean("year"))

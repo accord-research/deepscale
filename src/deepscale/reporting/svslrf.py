@@ -1,14 +1,12 @@
 """WMO-SVSLRF PDF composition.
 
 Composes the SkillReport into a PDF following WMO-No. 1246 layout
-conventions:
+conventions. All pages are US-letter portrait for consistent dimensions:
 
-  1. Title page (metadata).
-  2. Mandatory triplet summary (RPSS, ROC areas, reliability scalar).
-  3. Spatial maps grid (one page).
-  4. ROC curves page (if report.diagrams["roc"]).
-  5. Reliability diagram page (if report.diagrams["reliability"]).
-  6. Secondary metrics table (everything not in the mandatory set).
+  1. Cover + mandatory triplet (one combined page).
+  2. ROC curves + reliability diagram (one combined page, side-by-side).
+  3. Spatial maps grid (one page, only if spatial maps are present).
+  4. Secondary metrics table (only if secondary scores are present).
 """
 
 from .._optional import require_optional
@@ -33,25 +31,22 @@ def render(report, path):
     spatial_maps = {k: v for k, v in report.spatial.items()
                     if isinstance(v, xr.DataArray)}
 
+    roc = report.diagrams.get("roc")
+    rel = report.diagrams.get("reliability")
+
     with PdfPages(str(path)) as pdf:
-        _pages.title_page(
+        _pages.cover_and_triplet_page(
             pdf,
             title="Verification report",
             subtitle="WMO-SVSLRF format",
             metadata=report.metadata,
+            mandatory_scores=mandatory_scores,
         )
-        _pages.scalar_table_page(pdf, mandatory_scores, title="Mandatory triplet")
+
+        _pages.diagrams_page(pdf, roc, rel)
 
         if spatial_maps:
             _pages.map_grid_page(pdf, spatial_maps)
-
-        roc = report.diagrams.get("roc")
-        if roc:
-            _pages.roc_page(pdf, roc)
-
-        rel = report.diagrams.get("reliability")
-        if rel:
-            _pages.reliability_page(pdf, rel)
 
         if secondary_scores:
             _pages.scalar_table_page(pdf, secondary_scores, title="Secondary metrics")
