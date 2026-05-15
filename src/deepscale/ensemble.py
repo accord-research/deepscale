@@ -17,6 +17,7 @@ import xarray as xr
 from .registry import get_strategy
 from .cv import get_cv
 from .skill import skill
+from .pev import prediction_error_variance
 
 
 _DEFAULT_SAFEGUARDS = {
@@ -35,6 +36,21 @@ class EnsembleResult:
 
     See docs/superpowers/specs/2026-05-13-ensemble-safeguards-design.md
     for the field contract.
+
+    `pev` (added in the PEV design,
+    `docs/superpowers/specs/2026-05-15-prediction-error-variance-design.md`)
+    is the cross-validated prediction error variance per grid cell. It is
+    populated automatically by `ensemble()` from honest CV predictions
+    when those are available:
+
+    - `optimize_ensemble=False` + year-dim forecasts + obs given → from the
+      uniform-combined CV hindcasts.
+    - `optimize_ensemble=True`, `nested_cv=True` + year-dim forecasts + obs
+      → from the pooled outer-fold CV forecasts.
+    - `optimize_ensemble=True`, `nested_cv=False` → `None` (no honest CV
+      predictions exist on this path; matches the existing
+      `nested_cv_warning`).
+    - Year-less forecasts or `obs is None` → `None`.
     """
     forecast: xr.DataArray
     weights: np.ndarray
@@ -44,6 +60,7 @@ class EnsembleResult:
     gate_passed: bool = True
     shrinkage_lambda: float = 0.0
     safeguards_applied: dict = field(default_factory=dict)
+    pev: xr.DataArray | None = None
 
 
 def _uniform_weights(n):
@@ -137,6 +154,11 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
                 w = strat.fit(forecasts, obs, primary_metric=primary_metric, **kwargs)
             except (TypeError, ValueError):
                 w = _uniform_weights(len(forecasts))
+        pev = (
+            prediction_error_variance(combined, obs)
+            if obs is not None and "year" in combined.dims
+            else None
+        )
         return EnsembleResult(
             forecast=combined,
             weights=w,
@@ -146,6 +168,7 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             gate_passed=True,
             shrinkage_lambda=0.0,
             safeguards_applied={},
+            pev=pev,
         )
 
     if obs is None:
@@ -196,6 +219,7 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             gate_passed=True,
             shrinkage_lambda=lam,
             safeguards_applied=diag,
+            pev=None,
         )
 
     # Honest nested-CV path.
@@ -269,6 +293,8 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             stacklevel=2,
         )
 
+    pev = prediction_error_variance(opt_pooled, obs.sel(year=opt_pooled.year))
+
     return EnsembleResult(
         forecast=final_fcst,
         weights=w_final,
@@ -283,4 +309,5 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
         gate_passed=gate_passed,
         shrinkage_lambda=lam,
         safeguards_applied=diag,
+        pev=pev,
     )

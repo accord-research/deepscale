@@ -3,6 +3,7 @@ from .optimize import optimize
 from .ensemble import ensemble
 from .skill import skill, SkillReport
 from .compare import skill_compare, ComparisonReport
+from .pev import prediction_error_variance
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -15,4 +16,5 @@ __all__ = [
     "SkillReport",
     "skill_compare",
     "ComparisonReport",
+    "prediction_error_variance",
 ]
