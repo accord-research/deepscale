@@ -20,6 +20,11 @@ class BCSDMethod(MethodBase):
         self.n_years_ = len(hindcast.year)
 
     def predict(self, forecast, **kwargs):
+        # Squeeze out a singleton year dim so the per-member slice is always
+        # (lat, lon).  The CV loop passes a year-selected slice (year dim
+        # present) while some callers may already have squeezed it.
+        if "year" in forecast.dims and forecast.sizes["year"] == 1:
+            forecast = forecast.isel(year=0, drop=True)
         result_members = []
         for m in range(len(forecast.member)):
             fcst_m = forecast.isel(member=m).values

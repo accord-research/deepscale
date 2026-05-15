@@ -51,6 +51,13 @@ def _cpt_boundaries(obs_arr):
 @register_metric("rpss")
 class RPSSMetric(MetricBase):
     def compute(self, forecast, obs, spatial=False, loo_boundaries=False, bounded=False, cv_window=1, **kwargs):
+        if "tercile" not in forecast.dims or forecast.sizes["tercile"] != 3:
+            raise ValueError(
+                f"rpss requires a tercile-probability forecast with a "
+                f"'tercile' dim of size 3; got dims={forecast.dims} "
+                f"sizes={dict(forecast.sizes)}. Convert continuous forecasts "
+                f"via `to_tercile_cv()` before scoring with rpss."
+            )
         hcw = (cv_window - 1) // 2
         years = list(obs.year.values)
         n = len(years)

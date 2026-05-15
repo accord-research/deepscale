@@ -9,7 +9,11 @@ class PearsonMetric(MetricBase):
         if "member" in forecast.dims:
             forecast = forecast.mean("member")
         if "tercile" in forecast.dims:
-            forecast = forecast.mean("tercile")
+            raise ValueError(
+                "pearson_r requires a continuous-valued forecast; got a "
+                "forecast with a 'tercile' dim (tercile probabilities). Pass "
+                "the deterministic ensemble forecast instead."
+            )
 
         f_anom = forecast - forecast.mean("year")
         o_anom = obs - obs.mean("year")

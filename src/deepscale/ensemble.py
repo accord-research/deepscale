@@ -17,6 +17,7 @@ import xarray as xr
 from .registry import get_strategy
 from .cv import get_cv
 from .skill import skill
+from .pev import prediction_error_variance
 
 
 _DEFAULT_SAFEGUARDS = {
@@ -35,6 +36,30 @@ class EnsembleResult:
 
     See docs/superpowers/specs/2026-05-13-ensemble-safeguards-design.md
     for the field contract.
+
+    `pev` (added in the PEV design,
+    `docs/superpowers/specs/2026-05-15-prediction-error-variance-design.md`)
+    is the cross-validated prediction error variance per grid cell. It is
+    populated automatically by `ensemble()` from honest CV predictions
+    when those are available:
+
+    - `optimize_ensemble=False` + year-dim forecasts + obs given → from the
+      uniform-combined CV hindcasts.
+    - `optimize_ensemble=True`, `nested_cv=True` + year-dim forecasts + obs
+      → from the pooled outer-fold CV forecasts.
+    - `optimize_ensemble=True`, `nested_cv=False` → `None` (no honest CV
+      predictions exist on this path; matches the existing
+      `nested_cv_warning`).
+    - Year-less forecasts or `obs is None` → `None`.
+
+    `member_contributions` (added in the ensemble-diagnostics design,
+    `docs/superpowers/specs/2026-05-15-ensemble-diagnostics-design.md`) is a
+    dict keyed by member name. Each entry has two keys:
+    `correlation_with_mme_mean` (float; per-year Pearson correlation of the
+    member's spatial-mean CV hindcast with the MME's spatial-mean CV
+    forecast) and `skill_delta` (xr.DataArray of MME pearson_r minus member
+    pearson_r per grid cell). Populated under the same conditions as
+    ``pev``; otherwise ``None``.
     """
     forecast: xr.DataArray
     weights: np.ndarray
@@ -44,6 +69,8 @@ class EnsembleResult:
     gate_passed: bool = True
     shrinkage_lambda: float = 0.0
     safeguards_applied: dict = field(default_factory=dict)
+    pev: xr.DataArray | None = None
+    member_contributions: dict | None = None
 
 
 def _uniform_weights(n):
@@ -94,6 +121,52 @@ def _score(forecast, obs, primary_metric):
     )
 
 
+def _compute_member_contributions(forecasts, obs, combined, member_names):
+    """Per-member contribution diagnostics.
+
+    For each member i with CV hindcast f_i, compute:
+      - correlation_with_mme_mean: Pearson correlation between the
+        spatial-mean time series of f_i and combined, across years.
+      - skill_delta: pearson_r(combined, obs, spatial) -
+        pearson_r(f_i, obs, spatial), shape (lat, lon).
+
+    Returns dict[member_name -> {"correlation_with_mme_mean": float,
+    "skill_delta": xr.DataArray}].
+
+    Assumes all inputs have a `year` dim aligned with obs.year.
+    """
+    from .metrics.pearson import PearsonMetric
+
+    pearson = PearsonMetric()
+    spatial_dims = [d for d in combined.dims if d != "year"]
+
+    mme_skill_spatial = pearson.compute(combined, obs, spatial=True)
+    mme_spatial_mean = combined.mean(spatial_dims)
+
+    out = {}
+    for i, name in enumerate(member_names):
+        member = forecasts[i].forecast if hasattr(forecasts[i], "forecast") else forecasts[i]
+        member_skill_spatial = pearson.compute(member, obs, spatial=True)
+        member_spatial_mean = member.mean(spatial_dims)
+
+        # Correlation of two per-year time series. xr.corr is the obvious
+        # tool but only available in newer xarray; compute manually for
+        # safety. NaN propagates when either side has zero variance.
+        x = member_spatial_mean - member_spatial_mean.mean("year")
+        y = mme_spatial_mean - mme_spatial_mean.mean("year")
+        denom = float(np.sqrt((x ** 2).sum("year")) * np.sqrt((y ** 2).sum("year")))
+        if denom == 0.0 or not np.isfinite(denom):
+            corr = float("nan")
+        else:
+            corr = float((x * y).sum("year") / denom)
+
+        out[name] = {
+            "correlation_with_mme_mean": corr,
+            "skill_delta": (mme_skill_spatial - member_skill_spatial),
+        }
+    return out
+
+
 def _member_names(forecasts):
     names = []
     for i, f in enumerate(forecasts):
@@ -137,6 +210,16 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
                 w = strat.fit(forecasts, obs, primary_metric=primary_metric, **kwargs)
             except (TypeError, ValueError):
                 w = _uniform_weights(len(forecasts))
+        pev = (
+            prediction_error_variance(combined, obs)
+            if obs is not None and "year" in combined.dims
+            else None
+        )
+        member_contributions = (
+            _compute_member_contributions(forecasts, obs, combined, member_names)
+            if obs is not None and "year" in combined.dims
+            else None
+        )
         return EnsembleResult(
             forecast=combined,
             weights=w,
@@ -146,6 +229,8 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             gate_passed=True,
             shrinkage_lambda=0.0,
             safeguards_applied={},
+            pev=pev,
+            member_contributions=member_contributions,
         )
 
     if obs is None:
@@ -196,6 +281,8 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             gate_passed=True,
             shrinkage_lambda=lam,
             safeguards_applied=diag,
+            pev=None,
+            member_contributions=None,
         )
 
     # Honest nested-CV path.
@@ -269,6 +356,11 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
             stacklevel=2,
         )
 
+    pev = prediction_error_variance(opt_pooled, obs.sel(year=opt_pooled.year))
+    member_contributions = _compute_member_contributions(
+        forecasts, obs.sel(year=opt_pooled.year), opt_pooled, member_names,
+    )
+
     return EnsembleResult(
         forecast=final_fcst,
         weights=w_final,
@@ -283,4 +375,6 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
         gate_passed=gate_passed,
         shrinkage_lambda=lam,
         safeguards_applied=diag,
+        pev=pev,
+        member_contributions=member_contributions,
     )

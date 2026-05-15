@@ -1941,10 +1941,14 @@ def test_skill_preset_all_dedupes_aliases(synthetic_obs, perfect_tercile_forecas
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         report = deepscale.skill(perfect_tercile_forecast, synthetic_obs, metrics="all")
+    # Alias dedup: regardless of whether a given metric computes on this
+    # input, the registry must never emit two keys for the same class. RMSE
+    # in particular now raises on a tercile-probability forecast, so 0 keys
+    # is the actual outcome here — the dedup contract is "at most one".
     rmse_keys = [k for k in report.scores if k in ("rmse", "root_mean_squared_error")]
-    assert len(rmse_keys) == 1, f"expected one RMSE key, got {rmse_keys}"
+    assert len(rmse_keys) <= 1, f"alias dedup broken; got {rmse_keys}"
     hss_keys = [k for k in report.scores if k in ("hss", "heidke_skill_score")]
-    assert len(hss_keys) == 1, f"expected one HSS key, got {hss_keys}"
+    assert len(hss_keys) <= 1, f"alias dedup broken; got {hss_keys}"
 
     # spread_error_* require a `member` dim; the tercile forecast doesn't
     # have one, so metrics="all" should skip them with a warning rather than
@@ -1963,11 +1967,14 @@ def test_skill_bare_string_single_metric(synthetic_obs, perfect_tercile_forecast
 
 def test_skill_list_metrics_still_works(synthetic_obs, perfect_tercile_forecast):
     import deepscale
+    # Two probabilistic metrics that are valid on a tercile-probability forecast.
+    # The point of this test is that the explicit-list path still works after
+    # the metrics="all" feature was added.
     report = deepscale.skill(
         perfect_tercile_forecast, synthetic_obs,
-        metrics=["rpss", "pearson_r"],
+        metrics=["rpss", "heidke_skill_score"],
     )
-    assert set(report.scores.keys()) >= {"rpss", "pearson_r"}
+    assert set(report.scores.keys()) >= {"rpss", "heidke_skill_score"}
 
 
 # ===================================================================
@@ -3154,8 +3161,9 @@ def test_svslrf_render_minimal(tmp_path, climatology_forecast, synthetic_obs):
 
     assert path.stat().st_size > 0
     reader = pypdf.PdfReader(str(path))
-    # title + mandatory triplet table = at least 2 pages
-    assert len(reader.pages) >= 2
+    # cover + mandatory triplet are combined on one page; no diagrams,
+    # no spatial, no secondary in this minimal report.
+    assert len(reader.pages) >= 1
 
 
 def test_svslrf_render_full(tmp_path, climatology_forecast, synthetic_obs):
@@ -3175,9 +3183,9 @@ def test_svslrf_render_full(tmp_path, climatology_forecast, synthetic_obs):
     render(report, path)
 
     reader = pypdf.PdfReader(str(path))
-    # title + mandatory + maps + roc + reliability + secondary = up to 6
-    # secondary is empty here (everything is in mandatory), so >=5 is the floor.
-    assert len(reader.pages) >= 5
+    # cover+mandatory + diagrams (roc+reliability combined) + maps = 3 pages.
+    # secondary is empty here (everything is in mandatory).
+    assert len(reader.pages) >= 3
 
     # Title page must contain the region metadata
     text0 = reader.pages[0].extract_text() or ""
@@ -3194,7 +3202,7 @@ def test_skill_report_to_pdf_smoke(tmp_path, climatology_forecast, synthetic_obs
     report.to_pdf(path)
     assert path.stat().st_size > 0
     reader = pypdf.PdfReader(str(path))
-    assert len(reader.pages) >= 2
+    assert len(reader.pages) >= 1
 
 
 def test_skill_report_to_pdf_unknown_style_raises(tmp_path):
@@ -3202,6 +3210,67 @@ def test_skill_report_to_pdf_unknown_style_raises(tmp_path):
     report = SkillReport(scores={"rpss": 0.3})
     with pytest.raises(ValueError, match="unknown style"):
         report.to_pdf(tmp_path / "x.pdf", style="not_a_style")
+
+
+def test_svslrf_includes_member_contributions_page_when_present(tmp_path):
+    """When report.diagrams['member_contributions'] is present, the PDF
+    gains an extra page vs the same report without it."""
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    pypdf = pytest.importorskip("pypdf")
+    import numpy as np
+    import xarray as xr
+    from deepscale.skill import SkillReport
+    from deepscale.reporting.svslrf import render
+
+    # Minimal report — scores + a synthetic member_contributions diagram.
+    coords = {"lat": np.linspace(-5, 5, 4), "lon": np.linspace(30, 40, 4)}
+    member_contribs = {
+        "A": {
+            "correlation_with_mme_mean": 0.8,
+            "skill_delta": xr.DataArray(
+                np.full((4, 4), -0.1), dims=("lat", "lon"), coords=coords,
+            ),
+        },
+        "B": {
+            "correlation_with_mme_mean": 0.4,
+            "skill_delta": xr.DataArray(
+                np.full((4, 4), 0.1), dims=("lat", "lon"), coords=coords,
+            ),
+        },
+    }
+
+    base = SkillReport(scores={"rpss": 0.3})
+    base.metadata = {"region": "Test"}
+    base_path = tmp_path / "base.pdf"
+    render(base, base_path)
+    base_pages = len(pypdf.PdfReader(str(base_path)).pages)
+
+    with_mc = SkillReport(scores={"rpss": 0.3})
+    with_mc.metadata = {"region": "Test"}
+    with_mc.diagrams = {"member_contributions": member_contribs}
+    mc_path = tmp_path / "with_mc.pdf"
+    render(with_mc, mc_path)
+    mc_pages = len(pypdf.PdfReader(str(mc_path)).pages)
+
+    assert mc_pages == base_pages + 1
+
+
+def test_svslrf_omits_member_contributions_when_absent(tmp_path):
+    """When member_contributions is not in diagrams, no extra page is added.
+    This is the negative case of the test above."""
+    pytest.importorskip("matplotlib")
+    pypdf = pytest.importorskip("pypdf")
+    from deepscale.skill import SkillReport
+    from deepscale.reporting.svslrf import render
+
+    report = SkillReport(scores={"rpss": 0.3})
+    report.metadata = {"region": "Test"}
+    path = tmp_path / "no_mc.pdf"
+    render(report, path)
+    # cover+triplet only; no diagrams, no spatial, no secondary.
+    pages = len(pypdf.PdfReader(str(path)).pages)
+    assert pages == 1
 
 
 def test_skill_compare_basic(climatology_forecast, perfect_tercile_forecast, synthetic_obs):

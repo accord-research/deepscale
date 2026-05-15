@@ -43,7 +43,11 @@ class TwoAFCMetric(MetricBase):
         if "member" in forecast.dims:
             forecast = forecast.mean("member")
         if "tercile" in forecast.dims:
-            forecast = forecast.mean("tercile")
+            raise ValueError(
+                "2afc requires a continuous-valued forecast; got a forecast "
+                "with a 'tercile' dim (tercile probabilities). Pass the "
+                "deterministic ensemble forecast instead."
+            )
 
         import xarray as xr
         rho = xr.apply_ufunc(

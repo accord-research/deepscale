@@ -33,7 +33,11 @@ class SpearmanMetric(MetricBase):
         if "member" in forecast.dims:
             forecast = forecast.mean("member")
         if "tercile" in forecast.dims:
-            forecast = forecast.mean("tercile")
+            raise ValueError(
+                "spearman requires a continuous-valued forecast; got a "
+                "forecast with a 'tercile' dim (tercile probabilities). Pass "
+                "the deterministic ensemble forecast instead."
+            )
 
         f_rank = xr.apply_ufunc(
             _rank_with_nan, forecast,
