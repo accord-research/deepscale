@@ -3,12 +3,17 @@
 # docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md.
 
 shared:
-  # Rosetta product IDs. The list will grow as rosetta adds connectors;
-  # start with what is already exercised by examples/demo_seasonal_mme*.py.
+  # Rosetta product IDs from rosetta/src/rosetta/catalog.yaml.
+  # NOTE: the real target for African seasonal forecasting is precipitation
+  # against CHIRPS (obs/chirps + predictand_var: precip), matching what
+  # GHACOF uses. Temporarily running temperature here because chc.ucsb.edu
+  # (CHIRPS host) is currently returning 403 for all requests. Flip back
+  # to obs/chirps + precip once the CHIRPS host is reachable again, or
+  # once rosetta adds an alternative precip obs source (GPCP, CMAP, etc).
   models:
-    - c3s/ecmwf-monthly
+    - c3s/ecmwf
   observations: obs/era5
-  predictand_var: prcp
+  predictand_var: temp
   hindcast_period: [1993, 2016]
   cv: loyo
   method: cca
