@@ -21,12 +21,37 @@ Pick a scheme based on the temporal structure of your data:
 import warnings
 
 
+def _validate_consecutive_years(years):
+    """Return a list of consecutive integer years, or raise ValueError.
+
+    Empty input is allowed (yields no folds downstream). Otherwise years
+    must be integer-valued and strictly increase by 1. CV schemes here
+    slice positionally and treat positions as calendar neighbours; gappy
+    or non-monotonic input silently broke that contract before this guard.
+    """
+    out = []
+    for y in years:
+        y_int = int(y)
+        if y_int != y:
+            raise ValueError(f"years must be integer-valued; got {y!r}")
+        out.append(y_int)
+    for i in range(1, len(out)):
+        if out[i] - out[i - 1] != 1:
+            raise ValueError(
+                f"years must be consecutive integers (gap of 1); "
+                f"got {out[i - 1]} followed by {out[i]}"
+            )
+    return out
+
+
 def loyo(years, window=1):
     """Leave-years-out CV. Yields (train_years, test_year) for each year.
 
     window: number of years to leave out (1=strict LOO, 3=target±1, etc.)
     """
-    years = list(years)
+    if window < 1:
+        raise ValueError(f"window must be >= 1; got {window}")
+    years = _validate_consecutive_years(years)
     hcw = (window - 1) // 2
     for i, test_year in enumerate(years):
         train_years = [y for j, y in enumerate(years) if abs(j - i) > hcw]
@@ -43,7 +68,9 @@ def lko(years, k=3):
     holds out k years centred on each target and yields a single test year;
     `lko(k)` holds out k years and yields all of them as test years.
     """
-    years = list(years)
+    if k < 1:
+        raise ValueError(f"k must be >= 1; got {k}")
+    years = _validate_consecutive_years(years)
     n = len(years)
     if k > n:
         raise ValueError(f"k={k} exceeds number of years ({n}).")
@@ -63,7 +90,11 @@ def blocked(years, block_size=5, gap=0):
 
     A trailing partial block (if `len(years) % block_size != 0`) is dropped.
     """
-    years = list(years)
+    if block_size < 1:
+        raise ValueError(f"block_size must be >= 1; got {block_size}")
+    if gap < 0:
+        raise ValueError(f"gap must be >= 0; got {gap}")
+    years = _validate_consecutive_years(years)
     n = len(years)
     n_blocks = n // block_size
     for b in range(n_blocks):
@@ -85,7 +116,9 @@ def expanding(years, min_train=10):
     Warns if fewer than 5 evaluation years remain after honouring
     `min_train` — a common gotcha when hindcasts are short.
     """
-    years = list(years)
+    if min_train < 1:
+        raise ValueError(f"min_train must be >= 1; got {min_train}")
+    years = _validate_consecutive_years(years)
     n = len(years)
     n_eval = max(0, n - min_train)
     if n_eval < 5:

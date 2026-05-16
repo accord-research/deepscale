@@ -101,6 +101,12 @@ def _resolve_safeguards(user_safeguards):
         )
     merged = dict(_DEFAULT_SAFEGUARDS)
     merged.update(user_safeguards)
+    # Floor cannot be negative — effective_N is always >= 1, so any
+    # negative threshold silently disables the safeguard.
+    if merged["min_effective_n"] < 0:
+        raise ValueError(
+            f"min_effective_n must be >= 0; got {merged['min_effective_n']}"
+        )
     return merged
 
 
@@ -190,6 +196,8 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
     ``hindcasts=`` (bma), ``n_drop=`` (drop_worst), and ``scores=``
     (skill_weighted, drop_worst).
     """
+    if not forecasts:
+        raise ValueError("forecasts list cannot be empty")
     safeguards = _resolve_safeguards(safeguards)
     strat = get_strategy(strategy)()
     member_names = _member_names(forecasts)

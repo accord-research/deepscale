@@ -151,6 +151,13 @@ class CCAMethod(MethodBase):
           8. fcast = eofy @ rwk              (back-project to Y grid space)
           9. fcast = fcast / lat_wt [* y_std] + ym  (undo transforms, add mean)
         """
+        forecast_grid = (forecast.sizes["lat"], forecast.sizes["lon"])
+        if forecast_grid != self.predictor_shape_:
+            raise ValueError(
+                f"forecast grid shape (lat={forecast_grid[0]}, lon={forecast_grid[1]}) "
+                f"does not match training predictor grid shape "
+                f"(lat={self.predictor_shape_[0]}, lon={self.predictor_shape_[1]})"
+            )
         results = []
         for m in range(len(forecast.member)):
             x = forecast.isel(member=m).values.reshape(1, -1)
