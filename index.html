@@ -1,1 +1,50 @@
-<!doctype html><meta charset=utf-8><title>DeepScale Nightly</title><p>Setting up…
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>DeepScale Nightly Forecasts</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>DeepScale Nightly Forecasts</h1>
+    <nav>
+      <button data-tab="trends" class="active">Trends</button>
+      <button data-tab="forecasts">Forecasts</button>
+      <button data-tab="runs">Runs</button>
+    </nav>
+    <p id="last-run"></p>
+  </header>
+
+  <section id="tab-trends" class="tab active">
+    <div class="controls">
+      <label>Country: <select id="trend-country"><option value="">All</option></select></label>
+      <label>Season: <select id="trend-season"><option value="">All</option></select></label>
+      <label>Metric: <select id="trend-metric">
+        <option value="rpss" selected>RPSS</option>
+        <option value="roc_area">ROC area</option>
+        <option value="pearson">Pearson</option>
+      </select></label>
+    </div>
+    <canvas id="trend-chart" height="320"></canvas>
+    <h2>Latest skill snapshot</h2>
+    <table id="latest-table"><thead>
+      <tr><th>Country</th><th>Season</th><th>RPSS</th><th>ROC</th><th>Pearson</th></tr>
+    </thead><tbody></tbody></table>
+  </section>
+
+  <section id="tab-forecasts" class="tab">
+    <div class="controls">
+      <label>Country: <select id="fc-country"></select></label>
+      <label>Season: <select id="fc-season"></select></label>
+    </div>
+    <div id="fc-strip"></div>
+  </section>
+
+  <section id="tab-runs" class="tab">
+    <ul id="run-list"></ul>
+  </section>
+</body>
+</html>

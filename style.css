@@ -1,0 +1,25 @@
+/* scripts/nightly/site/style.css */
+body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5rem; color: #222; }
+header { border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+header h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
+nav button {
+  border: none; background: transparent; padding: 0.4rem 0.8rem;
+  cursor: pointer; font-size: 0.95rem; border-radius: 4px;
+}
+nav button.active { background: #eef; color: #225; font-weight: 600; }
+#last-run { color: #666; font-size: 0.85rem; margin: 0.4rem 0 0; }
+.tab { display: none; }
+.tab.active { display: block; }
+.controls { margin: 0.5rem 0 1rem; }
+.controls label { margin-right: 1rem; font-size: 0.9rem; }
+table { border-collapse: collapse; margin-top: 1rem; }
+th, td { padding: 0.35rem 0.8rem; border-bottom: 1px solid #eee; text-align: left; }
+#fc-strip { display: flex; gap: 1rem; overflow-x: auto; }
+#fc-strip figure { margin: 0; }
+#fc-strip img { max-width: 320px; border: 1px solid #ddd; }
+#fc-strip figcaption { font-size: 0.85rem; text-align: center; color: #555; }
+#run-list { list-style: none; padding: 0; }
+#run-list li { padding: 0.35rem 0; border-bottom: 1px solid #f0f0f0; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+.badge { padding: 0.1rem 0.45rem; border-radius: 3px; font-size: 0.8rem; margin-left: 0.25rem; }
+.badge.ok { background: #d9f5dc; color: #15602f; }
+.badge.fail { background: #fcd9d9; color: #6b1818; }
