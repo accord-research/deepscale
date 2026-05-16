@@ -24,8 +24,9 @@ def trimmed_config(tmp_path):
 
     src = REPO_ROOT / "scripts" / "nightly" / "countries.yml"
     data = yaml.safe_load(src.read_text())
-    data["shared"]["hindcast_period"] = [2012, 2014]
-    data["shared"]["models"] = ["c3s/ecmwf-monthly"]
+    # seasonal_mme requires >=5 years of overlap; use 6 to leave headroom.
+    data["shared"]["hindcast_period"] = [2010, 2015]
+    data["shared"]["models"] = ["c3s/ecmwf"]
     data["countries"] = {"kenya": data["countries"]["kenya"]}
     data["countries"]["kenya"]["seasons"] = {
         "MAM": data["countries"]["kenya"]["seasons"]["MAM"],
