@@ -1,0 +1,154 @@
+"""Gather-job glue: artifacts/<country>/<season>/<init>/ -> site/.
+
+`publish()` is the unit-tested core. The CLI wrapper at the bottom is the
+entry point invoked from the workflow's gather job after artifact download.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+from pathlib import Path
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write text atomically via a tempfile + rename so a crash mid-write
+    cannot leave a half-written JSON manifest behind.
+    """
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content)
+    os.replace(tmp, path)
+
+
+def publish(
+    *,
+    artifacts_root: Path,
+    site_root: Path,
+    run_date: str,
+    commit_sha: str,
+    expected: list[tuple[str, str, int, int]],
+) -> None:
+    """Copy artifacts into site/ and append one metrics.json row per (country,
+    season) in `expected`.
+
+    `expected` is the list of (country, season, init_year, init_month) tuples
+    the matrix should have produced; missing artifacts become status=failed.
+    """
+    site_root.mkdir(parents=True, exist_ok=True)
+
+    # Copy/refresh static site assets from scripts/nightly/site/ into site_root.
+    # Fail loud if a template is missing — the three filenames are a hard
+    # contract; a silent skip would ship a broken dashboard to gh-pages.
+    site_src = Path(__file__).resolve().parent / "site"
+    for fname in ("index.html", "app.js", "style.css"):
+        fsrc = site_src / fname
+        if not fsrc.is_file():
+            raise FileNotFoundError(f"missing site template: {fsrc}")
+        shutil.copy2(fsrc, site_root / fname)
+
+    metrics_path = site_root / "metrics.json"
+    existing: list[dict] = (
+        json.loads(metrics_path.read_text()) if metrics_path.exists() else []
+    )
+    # Idempotence: drop any prior rows with the same (country, season, init,
+    # date) so re-running publish on the same gather job doesn't duplicate.
+    expected_keys = {
+        (c, s, f"{iy}-{im:02d}", run_date) for c, s, iy, im in expected
+    }
+    existing = [
+        r for r in existing
+        if (r["country"], r["season"], r["init"], r["date"]) not in expected_keys
+    ]
+
+    new_rows: list[dict] = []
+    index_entries: list[dict] = []
+
+    for country, season, iy, im in expected:
+        init_str = f"{iy}-{im:02d}"
+        src = artifacts_root / country / season / init_str
+        if src.is_dir() and (src / "skill_metrics.json").is_file():
+            metrics = json.loads((src / "skill_metrics.json").read_text())
+            dest = site_root / "forecasts" / country / season / init_str
+            dest.mkdir(parents=True, exist_ok=True)
+            for fname in ("tercile_map.png", "forecast.nc"):
+                fsrc = src / fname
+                if fsrc.is_file():
+                    shutil.copy2(fsrc, dest / fname)
+            new_rows.append({
+                "date": run_date,
+                "commit": commit_sha,
+                "country": country,
+                "season": season,
+                "init": init_str,
+                "status": "ok",
+                "metrics": metrics,
+                "forecast_dir": f"forecasts/{country}/{season}/{init_str}",
+            })
+            index_entries.append(
+                {"country": country, "season": season, "init": init_str}
+            )
+        else:
+            new_rows.append({
+                "date": run_date,
+                "commit": commit_sha,
+                "country": country,
+                "season": season,
+                "init": init_str,
+                "status": "failed",
+                "metrics": None,
+                "forecast_dir": None,
+                "reason": "artifact_missing",
+            })
+
+    _atomic_write_text(metrics_path, json.dumps(existing + new_rows, indent=2))
+
+    # forecasts/index.json — flat list of all forecast folders that exist on
+    # the site after this run. Rebuilt every time so removals (if we ever add
+    # retention) would propagate.
+    forecasts_root = site_root / "forecasts"
+    forecasts_root.mkdir(parents=True, exist_ok=True)
+    full_index = list(index_entries)
+    # Include pre-existing entries too.
+    for c_dir in sorted(forecasts_root.iterdir()):
+        if not c_dir.is_dir():
+            continue
+        for s_dir in sorted(c_dir.iterdir()):
+            if not s_dir.is_dir():
+                continue
+            for i_dir in sorted(s_dir.iterdir()):
+                if not i_dir.is_dir():
+                    continue
+                entry = {
+                    "country": c_dir.name,
+                    "season": s_dir.name,
+                    "init": i_dir.name,
+                }
+                if entry not in full_index:
+                    full_index.append(entry)
+    _atomic_write_text(forecasts_root / "index.json", json.dumps(full_index, indent=2))
+
+
+def _cli() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--artifacts-root", required=True)
+    p.add_argument("--site-root", required=True)
+    p.add_argument("--run-date", required=True)
+    p.add_argument("--commit-sha", required=True)
+    p.add_argument(
+        "--expected", required=True,
+        help="JSON list of [country, season, init_year, init_month] tuples",
+    )
+    args = p.parse_args()
+    expected = [tuple(x) for x in json.loads(args.expected)]
+    publish(
+        artifacts_root=Path(args.artifacts_root),
+        site_root=Path(args.site_root),
+        run_date=args.run_date,
+        commit_sha=args.commit_sha,
+        expected=expected,
+    )
+
+
+if __name__ == "__main__":
+    _cli()

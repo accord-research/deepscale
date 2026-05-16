@@ -88,6 +88,14 @@ See `deepscale/examples/README.md` for full prerequisites and output details.
 
 Rosetta handles acquisition and normalization. DeepScale handles forecasting logic and verification. The boundary is standardized xarray data, so DeepScale remains source-agnostic.
 
+## Nightly forecasts
+
+A nightly GitHub Actions workflow (`.github/workflows/nightly_forecast.yml`) runs the seasonal pipeline for Kenya, Ethiopia, and Nigeria and publishes skill metrics + forecast plots to a static dashboard at [https://accord-research.github.io/deepscale/](https://accord-research.github.io/deepscale/).
+
+- Per-country parameters live in [`scripts/nightly/countries.yml`](scripts/nightly/countries.yml).
+- The matrix runs one country per `ubuntu-latest` runner; the gather job appends a row per `(country, season)` to `metrics.json` on the `gh-pages` branch, with `status: "failed"` for any country whose job did not complete (partial-publish-on-failure).
+- See the design at [`docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md`](docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md) and the implementation plan at [`docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md`](docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md).
+
 ## Repository hygiene
 
 `deepscale/.gitignore` excludes local-only artifacts including virtualenvs, caches, and generated example outputs (`deepscale/examples/output/`, `*.png`, `*.nc`, `*.zarr/`).
