@@ -22,33 +22,32 @@ shared:
     x_eof_modes: 8
     y_eof_modes: 6
 
+# Each country runs the full MAM + JJAS + OND rotation regardless of local
+# climatology. Some (country, season) pairs are climatologically dry (e.g.
+# Kenya JJAS) and will yield low-skill forecasts — that's fine, the dashboard
+# still tracks them and a flat/zero skill line is informative data.
+
+_season_defaults: &season_defaults
+  MAM:
+    init_months: [12, 1, 2]
+    target_months: [3, 4, 5]
+    season_start_month: 3
+  JJAS:
+    init_months: [3, 4, 5]
+    target_months: [6, 7, 8, 9]
+    season_start_month: 6
+  OND:
+    init_months: [7, 8, 9]
+    target_months: [10, 11, 12]
+    season_start_month: 10
+
 countries:
   kenya:
     bbox: {west: 33.5, east: 42.0, south: -5.0, north: 5.5}
-    seasons:
-      MAM:
-        init_months: [12, 1, 2]
-        target_months: [3, 4, 5]
-        season_start_month: 3
-      OND:
-        init_months: [7, 8, 9]
-        target_months: [10, 11, 12]
-        season_start_month: 10
+    seasons: *season_defaults
   ethiopia:
     bbox: {west: 33.0, east: 48.0, south: 3.5, north: 15.0}
-    seasons:
-      JJAS:
-        init_months: [3, 4, 5]
-        target_months: [6, 7, 8, 9]
-        season_start_month: 6
-      MAM:
-        init_months: [12, 1, 2]
-        target_months: [3, 4, 5]
-        season_start_month: 3
+    seasons: *season_defaults
   nigeria:
     bbox: {west: 2.5, east: 15.0, south: 4.0, north: 14.0}
-    seasons:
-      JJAS:
-        init_months: [3, 4, 5]
-        target_months: [6, 7, 8, 9]
-        season_start_month: 6
+    seasons: *season_defaults

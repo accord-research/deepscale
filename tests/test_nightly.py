@@ -219,6 +219,7 @@ def test_publish_appends_metrics_row(tmp_path):
     rows = json.loads(metrics_path.read_text())
     assert len(rows) == 1
     row = rows[0]
+    assert row["kind"] == "operational"
     assert row["date"] == "2026-05-16"
     assert row["commit"] == "a540133"
     assert row["country"] == "kenya"
@@ -306,9 +307,13 @@ def test_publish_appends_not_overwrites(tmp_path):
     assert rows[1]["date"] == "2026-05-16"
 
 
-def test_publish_is_idempotent_on_rerun(tmp_path):
-    """Re-running publish with the same expected + run_date should not
-    duplicate rows (a retry of a gather job must converge, not snowball)."""
+def test_publish_appends_unconditionally(tmp_path):
+    """Re-running publish with identical inputs SHOULD duplicate rows.
+
+    The A+B dual-mode design intentionally drops idempotence — every call
+    appends, and the dashboard handles dedupe at read time. This pins that
+    behavior so a future "helpful" idempotence reintroduction is caught.
+    """
     from scripts.nightly.publish import publish
 
     artifacts = tmp_path / "artifacts"
@@ -327,11 +332,39 @@ def test_publish_is_idempotent_on_rerun(tmp_path):
         expected=[("kenya", "MAM", 2026, 2)],
     )
     publish(**kwargs)
-    publish(**kwargs)  # rerun — must not duplicate
+    publish(**kwargs)
+
+    rows = json.loads((site / "metrics.json").read_text())
+    assert len(rows) == 2
+    assert all(r["commit"] == "abc" for r in rows)
+
+
+def test_publish_writes_rebench_kind(tmp_path):
+    """publish with kind='rebench' tags rows accordingly so the dashboard can
+    distinguish operational issuances from retrospective re-runs."""
+    from scripts.nightly.publish import publish
+
+    artifacts = tmp_path / "artifacts"
+    _seed_artifact_tree(
+        artifacts, "kenya", "MAM", "2026-02",
+        metrics={"rpss": 0.41},
+    )
+    site = tmp_path / "site"
+    site.mkdir()
+
+    publish(
+        artifacts_root=artifacts,
+        site_root=site,
+        run_date="2026-08-01",
+        commit_sha="bench1",
+        expected=[("kenya", "MAM", 2026, 2)],
+        kind="rebench",
+    )
 
     rows = json.loads((site / "metrics.json").read_text())
     assert len(rows) == 1
-    assert rows[0]["commit"] == "abc"
+    assert rows[0]["kind"] == "rebench"
+    assert rows[0]["commit"] == "bench1"
 
 
 def test_publish_copies_site_templates(tmp_path):

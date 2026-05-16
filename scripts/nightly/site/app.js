@@ -44,12 +44,16 @@ function colorFor(key) {
   return `hsl(${Math.abs(h) % 360}, 65%, 45%)`;
 }
 
+// Rows written before the `kind` field existed default to "operational".
+function rowKind(r) { return r.kind || 'operational'; }
+
 function renderTrends(metrics) {
   const country = document.getElementById('trend-country').value;
   const season = document.getElementById('trend-season').value;
   const metric = document.getElementById('trend-metric').value;
 
   const rows = metrics.filter(r =>
+    rowKind(r) === 'operational' &&
     (!country || r.country === country) &&
     (!season || r.season === season)
   );
@@ -95,6 +99,7 @@ function renderLatestTable(metrics) {
   tbody.innerHTML = '';
   const latestByPair = {};
   for (const r of metrics) {
+    if (rowKind(r) !== 'operational') continue;
     if (r.status !== 'ok' || !r.metrics) continue;
     const key = `${r.country}__${r.season}`;
     if (!latestByPair[key] || latestByPair[key].date < r.date) latestByPair[key] = r;
@@ -132,6 +137,73 @@ function renderForecasts(index) {
   }
   fcCountry.addEventListener('change', refresh);
   fcSeason.addEventListener('change', refresh);
+  refresh();
+}
+
+let rebenchChartInstance = null;
+
+function renderRebench(metrics) {
+  const tupleSel = document.getElementById('rb-tuple');
+  const metricSel = document.getElementById('rb-metric');
+
+  const rebenchRows = metrics.filter(r =>
+    rowKind(r) === 'rebench' && r.status === 'ok' && r.metrics
+  );
+
+  const tuples = [...new Set(rebenchRows.map(
+    r => `${r.country}__${r.season}__${r.init}`
+  ))].sort();
+
+  // Preserve any prior selection on re-render.
+  const prior = tupleSel.value;
+  tupleSel.innerHTML = tuples.map(t => {
+    const [c, s, i] = t.split('__');
+    return `<option value="${esc(t)}">${esc(c)} / ${esc(s)} / init ${esc(i)}</option>`;
+  }).join('');
+  if (prior && tuples.includes(prior)) tupleSel.value = prior;
+
+  function refresh() {
+    const sel = tupleSel.value;
+    const metric = metricSel.value;
+    if (!sel) {
+      if (rebenchChartInstance) { rebenchChartInstance.destroy(); rebenchChartInstance = null; }
+      return;
+    }
+    const [c, s, i] = sel.split('__');
+    const series = rebenchRows
+      .filter(r => r.country === c && r.season === s && r.init === i)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(r => ({x: r.date, y: r.metrics[metric] ?? null, commit: r.commit}));
+
+    if (rebenchChartInstance) rebenchChartInstance.destroy();
+    const ctx = document.getElementById('rebench-chart').getContext('2d');
+    rebenchChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {datasets: [{
+        label: `${c} ${s} init ${i}`,
+        data: series,
+        borderColor: colorFor(`${c} ${s} ${i}`),
+        spanGaps: false,
+        tension: 0.2,
+      }]},
+      options: {
+        parsing: false,
+        scales: {x: {type: 'category'}, y: {title: {display: true, text: metric}}},
+        plugins: {tooltip: {callbacks: {
+          afterLabel: (ctx) => {
+            const p = series[ctx.dataIndex];
+            return p ? `commit ${shortSha(p.commit)}` : '';
+          }
+        }}}
+      },
+    });
+  }
+  tupleSel.removeEventListener('change', tupleSel.__rbRefresh || (() => {}));
+  metricSel.removeEventListener('change', metricSel.__rbRefresh || (() => {}));
+  tupleSel.__rbRefresh = refresh;
+  metricSel.__rbRefresh = refresh;
+  tupleSel.addEventListener('change', refresh);
+  metricSel.addEventListener('change', refresh);
   refresh();
 }
 
@@ -174,6 +246,7 @@ async function init() {
   renderTrends(metrics);
   renderLatestTable(metrics);
   renderForecasts(index);
+  renderRebench(metrics);
   renderRuns(metrics);
 }
 

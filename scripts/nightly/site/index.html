@@ -13,6 +13,7 @@
     <nav>
       <button data-tab="trends" class="active">Trends</button>
       <button data-tab="forecasts">Forecasts</button>
+      <button data-tab="rebench">Rebench</button>
       <button data-tab="runs">Runs</button>
     </nav>
     <p id="last-run"></p>
@@ -41,6 +42,23 @@
       <label>Season: <select id="fc-season"></select></label>
     </div>
     <div id="fc-strip"></div>
+  </section>
+
+  <section id="tab-rebench" class="tab">
+    <p class="tab-blurb">
+      How does the same historical forecast score under different deepscale
+      versions? Each line shows skill on a fixed (country, season, init)
+      across rebench runs — x-axis is the rebench date.
+    </p>
+    <div class="controls">
+      <label>Forecast: <select id="rb-tuple"></select></label>
+      <label>Metric: <select id="rb-metric">
+        <option value="rpss" selected>RPSS</option>
+        <option value="roc_area">ROC area</option>
+        <option value="pearson">Pearson</option>
+      </select></label>
+    </div>
+    <canvas id="rebench-chart" height="320"></canvas>
   </section>
 
   <section id="tab-runs" class="tab">

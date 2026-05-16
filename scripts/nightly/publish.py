@@ -28,12 +28,20 @@ def publish(
     run_date: str,
     commit_sha: str,
     expected: list[tuple[str, str, int, int]],
+    kind: str = "operational",
 ) -> None:
     """Copy artifacts into site/ and append one metrics.json row per (country,
     season) in `expected`.
 
     `expected` is the list of (country, season, init_year, init_month) tuples
     the matrix should have produced; missing artifacts become status=failed.
+
+    `kind` distinguishes operational (forecast as-issued at its init date) from
+    rebench (re-run of a historical forecast under current deepscale). Rows of
+    both kinds coexist in metrics.json; the dashboard filters on `kind`.
+
+    No dedupe: every call appends rows. Re-running publish for the same set
+    will produce duplicate rows. The dashboard handles dedupe at read time.
     """
     site_root.mkdir(parents=True, exist_ok=True)
 
@@ -51,15 +59,6 @@ def publish(
     existing: list[dict] = (
         json.loads(metrics_path.read_text()) if metrics_path.exists() else []
     )
-    # Idempotence: drop any prior rows with the same (country, season, init,
-    # date) so re-running publish on the same gather job doesn't duplicate.
-    expected_keys = {
-        (c, s, f"{iy}-{im:02d}", run_date) for c, s, iy, im in expected
-    }
-    existing = [
-        r for r in existing
-        if (r["country"], r["season"], r["init"], r["date"]) not in expected_keys
-    ]
 
     new_rows: list[dict] = []
     index_entries: list[dict] = []
@@ -76,6 +75,7 @@ def publish(
                 if fsrc.is_file():
                     shutil.copy2(fsrc, dest / fname)
             new_rows.append({
+                "kind": kind,
                 "date": run_date,
                 "commit": commit_sha,
                 "country": country,
@@ -90,6 +90,7 @@ def publish(
             )
         else:
             new_rows.append({
+                "kind": kind,
                 "date": run_date,
                 "commit": commit_sha,
                 "country": country,
@@ -139,6 +140,11 @@ def _cli() -> None:
         "--expected", required=True,
         help="JSON list of [country, season, init_year, init_month] tuples",
     )
+    p.add_argument(
+        "--kind", default="operational", choices=["operational", "rebench"],
+        help="Row kind. `operational` = forecast as-issued at its init date. "
+             "`rebench` = re-run of a historical forecast under current deepscale.",
+    )
     args = p.parse_args()
     expected = [tuple(x) for x in json.loads(args.expected)]
     publish(
@@ -147,6 +153,7 @@ def _cli() -> None:
         run_date=args.run_date,
         commit_sha=args.commit_sha,
         expected=expected,
+        kind=args.kind,
     )
 
 

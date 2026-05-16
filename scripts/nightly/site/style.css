@@ -12,6 +12,7 @@ nav button.active { background: #eef; color: #225; font-weight: 600; }
 .tab.active { display: block; }
 .controls { margin: 0.5rem 0 1rem; }
 .controls label { margin-right: 1rem; font-size: 0.9rem; }
+.tab-blurb { color: #555; font-size: 0.9rem; max-width: 60ch; margin: 0.5rem 0; }
 table { border-collapse: collapse; margin-top: 1rem; }
 th, td { padding: 0.35rem 0.8rem; border-bottom: 1px solid #eee; text-align: left; }
 #fc-strip { display: flex; gap: 1rem; overflow-x: auto; }

@@ -135,12 +135,39 @@ def _run_one_target(cfg: Config, country_name: str, country, target: Target,
     }
 
 
+def _load_targets_file(path: Path, country_name: str) -> list[Target]:
+    """Load explicit (country, season, init_year, init_month) tuples from a
+    JSON file. Used by the rebench workflow to pin which historical forecasts
+    to re-run, instead of letting select_targets pick today's in-range set.
+    """
+    raw = json.loads(path.read_text())
+    out: list[Target] = []
+    for entry in raw:
+        c, s, iy, im = entry
+        if c != country_name:
+            continue
+        out.append(Target(c, s, int(iy), int(im)))
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--country", required=True)
     p.add_argument("--today", required=True, help="ISO date YYYY-MM-DD")
     p.add_argument("--output-root", required=True)
     p.add_argument("--config", default=str(Path(__file__).parent / "countries.yml"))
+    p.add_argument(
+        "--kind", default="operational", choices=["operational", "rebench"],
+        help="Forecast kind. operational = today's in-range targets via "
+             "select_targets. rebench = re-run an explicit historical set "
+             "from --targets-file. Default: operational.",
+    )
+    p.add_argument(
+        "--targets-file", default=None,
+        help="Path to a JSON file with explicit "
+             "[[country, season, init_year, init_month], ...] tuples. "
+             "Required when --kind=rebench; ignored for operational.",
+    )
     args = p.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -153,9 +180,21 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     country = cfg.countries[args.country]
     today = date.fromisoformat(args.today)
-    targets = [t for t in select_targets(cfg, today) if t.country == args.country]
+
+    if args.kind == "rebench":
+        if not args.targets_file:
+            print(
+                "[nightly] --kind=rebench requires --targets-file with the "
+                "explicit (country, season, init_year, init_month) list.",
+                file=sys.stderr,
+            )
+            return 2
+        targets = _load_targets_file(Path(args.targets_file), args.country)
+    else:
+        targets = [t for t in select_targets(cfg, today) if t.country == args.country]
+
     if not targets:
-        print(f"[nightly] No targets for {args.country} on {today}; exit 0.")
+        print(f"[nightly] No targets for {args.country} on {today} (kind={args.kind}); exit 0.")
         return 0
 
     output_root = Path(args.output_root)
