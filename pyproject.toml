@@ -14,7 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 plot = ["matplotlib"]
 plotting = ["cartopy>=0.22", "matplotlib>=3.7", "rioxarray"]
-dev = ["pytest"]
+dev = ["pytest", "PyYAML", "matplotlib"]
 # GPU dependencies for CorrDiff (torch, earth2studio, physicsnemo) are not on
 # PyPI and must be installed manually.  See src/deepscale/methods/corrdiff.py
 # for instructions.
