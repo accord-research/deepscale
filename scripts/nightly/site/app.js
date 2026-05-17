@@ -237,7 +237,15 @@ async function init() {
   const trendCountry = document.getElementById('trend-country');
   trendCountry.innerHTML += COUNTRIES.map(c => `<option>${c}</option>`).join('');
   const trendSeason = document.getElementById('trend-season');
-  trendSeason.innerHTML += ['MAM', 'JJAS', 'OND'].map(s => `<option>${s}</option>`).join('');
+  // Derive the season options from the loaded data; fall back to the full
+  // 12 standard 3-month windows if metrics.json is empty (first-run state).
+  const STANDARD_SEASONS = [
+    'DJF', 'JFM', 'FMA', 'MAM', 'AMJ', 'MJJ',
+    'JJA', 'JAS', 'ASO', 'SON', 'OND', 'NDJ',
+  ];
+  const observedSeasons = [...new Set(metrics.map(r => r.season))].sort();
+  const seasonOptions = observedSeasons.length ? observedSeasons : STANDARD_SEASONS;
+  trendSeason.innerHTML += seasonOptions.map(s => `<option>${esc(s)}</option>`).join('');
 
   trendCountry.addEventListener('change', () => renderTrends(metrics));
   trendSeason.addEventListener('change', () => renderTrends(metrics));

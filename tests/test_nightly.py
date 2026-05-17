@@ -74,29 +74,29 @@ def test_kenya_mam_skipped_when_season_underway(cfg):
     assert not any(t.country == "kenya" and t.season == "MAM" for t in targets)
 
 
-def test_nigeria_jjas_skipped_when_no_init_available(cfg):
-    # Nigeria JJAS init_months = [3,4,5]. In January, no init is available.
+def test_nigeria_jja_skipped_when_no_init_available(cfg):
+    # Nigeria JJA init_months = [3,4,5]. In January, no init is available.
     targets = select_targets(cfg, date(2026, 1, 10))
-    assert not any(t.country == "nigeria" and t.season == "JJAS" for t in targets)
+    assert not any(t.country == "nigeria" and t.season == "JJA" for t in targets)
 
 
-def test_ethiopia_jjas_latest_init(cfg):
-    # In May, the latest JJAS init available is May.
+def test_ethiopia_jja_latest_init(cfg):
+    # In May, the latest JJA init available is May.
     targets = select_targets(cfg, date(2026, 5, 12))
-    et_jjas = [t for t in targets if t.country == "ethiopia" and t.season == "JJAS"]
-    assert et_jjas == [Target("ethiopia", "JJAS", 2026, 5)]
+    et_jja = [t for t in targets if t.country == "ethiopia" and t.season == "JJA"]
+    assert et_jja == [Target("ethiopia", "JJA", 2026, 5)]
 
 
-def test_init_months_cover_at_least_half_the_year(cfg):
-    # Sanity check that init_months coverage in countries.yml is non-trivial.
-    # Some months (e.g. June, Oct, Nov 2026) legitimately have no targets —
-    # those are gaps between one season's last init and the next season's
-    # first init. We expect coverage of at least half the year.
+def test_init_months_cover_every_month(cfg):
+    # With all 12 overlapping 3-month seasons, every calendar month should
+    # have multiple in-range targets per country — no gap months.
     months_with_any = [
         m for m in range(1, 13)
         if select_targets(cfg, date(2026, m, 15))
     ]
-    assert len(months_with_any) >= 6, f"expected >=6 months covered, got {months_with_any}"
+    assert months_with_any == list(range(1, 13)), (
+        f"expected every month covered, got {months_with_any}"
+    )
 
 
 import json
@@ -245,14 +245,14 @@ def test_publish_marks_missing_country_failed(tmp_path):
         commit_sha="a540133",
         expected=[
             ("kenya", "MAM", 2026, 2),
-            ("ethiopia", "JJAS", 2026, 5),
+            ("ethiopia", "JJA", 2026, 5),
         ],
     )
     rows = json.loads((site / "metrics.json").read_text())
     assert len(rows) == 2
     statuses = {(r["country"], r["season"]): r["status"] for r in rows}
     assert statuses[("kenya", "MAM")] == "failed"
-    assert statuses[("ethiopia", "JJAS")] == "failed"
+    assert statuses[("ethiopia", "JJA")] == "failed"
 
 
 def test_publish_writes_index_json(tmp_path):
