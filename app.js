@@ -71,11 +71,8 @@ function renderTrends(metrics) {
       y: r.status === 'ok' && r.metrics ? r.metrics[metric] : null,
     })),
     borderColor: colorFor(key),
-    backgroundColor: colorFor(key),
     spanGaps: false,
     tension: 0.2,
-    pointRadius: 4,
-    pointHoverRadius: 6,
   }));
 
   if (chartInstance) chartInstance.destroy();
@@ -84,8 +81,6 @@ function renderTrends(metrics) {
     type: 'line',
     data: {datasets},
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
       parsing: false,
       scales: {x: {type: 'category'}, y: {title: {display: true, text: metric}}},
       plugins: {tooltip: {callbacks: {
@@ -111,14 +106,10 @@ function renderLatestTable(metrics) {
   }
   Object.values(latestByPair).forEach(r => {
     const tr = document.createElement('tr');
-    const fmt = (v) => (typeof v === 'number') ? v.toFixed(2) : '–';
-    tr.innerHTML = `<td>${esc(r.country)}</td>` +
-      `<td>${esc(r.season)}</td>` +
-      `<td>${esc(r.init)}</td>` +
-      `<td>${fmt(r.metrics.rpss)}</td>` +
-      `<td>${fmt(r.metrics['2afc'])}</td>` +
-      `<td>${fmt(r.metrics.pearson_r)}</td>` +
-      `<td>${fmt(r.metrics.heidke_skill_score)}</td>`;
+    tr.innerHTML = `<td>${esc(r.country)}</td><td>${esc(r.season)}</td>` +
+      `<td>${(r.metrics.rpss ?? '').toFixed?.(2) ?? '–'}</td>` +
+      `<td>${(r.metrics.roc_area ?? '').toFixed?.(2) ?? '–'}</td>` +
+      `<td>${(r.metrics.pearson ?? '').toFixed?.(2) ?? '–'}</td>`;
     tbody.appendChild(tr);
   });
 }
@@ -126,11 +117,7 @@ function renderLatestTable(metrics) {
 function renderForecasts(index) {
   const fcCountry = document.getElementById('fc-country');
   const fcSeason = document.getElementById('fc-season');
-  // Default to a country that actually has forecasts in the index. Falls back
-  // to the full COUNTRIES list when the index is empty (first-run state).
-  const observedCountries = [...new Set(index.map(e => e.country))].sort();
-  const countriesToList = observedCountries.length ? observedCountries : COUNTRIES;
-  fcCountry.innerHTML = countriesToList.map(c => `<option>${esc(c)}</option>`).join('');
+  fcCountry.innerHTML = COUNTRIES.map(c => `<option>${esc(c)}</option>`).join('');
 
   function refresh() {
     const c = fcCountry.value;
@@ -196,15 +183,10 @@ function renderRebench(metrics) {
         label: `${c} ${s} init ${i}`,
         data: series,
         borderColor: colorFor(`${c} ${s} ${i}`),
-        backgroundColor: colorFor(`${c} ${s} ${i}`),
         spanGaps: false,
         tension: 0.2,
-        pointRadius: 4,
-        pointHoverRadius: 6,
       }]},
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
         parsing: false,
         scales: {x: {type: 'category'}, y: {title: {display: true, text: metric}}},
         plugins: {tooltip: {callbacks: {

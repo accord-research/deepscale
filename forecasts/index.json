@@ -13,5 +13,35 @@
     "country": "ethiopia",
     "season": "ASO",
     "init": "2026-05"
+  },
+  {
+    "country": "kenya",
+    "season": "JJA",
+    "init": "2026-05"
+  },
+  {
+    "country": "kenya",
+    "season": "JAS",
+    "init": "2026-05"
+  },
+  {
+    "country": "kenya",
+    "season": "ASO",
+    "init": "2026-05"
+  },
+  {
+    "country": "nigeria",
+    "season": "JJA",
+    "init": "2026-05"
+  },
+  {
+    "country": "nigeria",
+    "season": "JAS",
+    "init": "2026-05"
+  },
+  {
+    "country": "nigeria",
+    "season": "ASO",
+    "init": "2026-05"
   }
 ]
