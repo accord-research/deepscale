@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "country": "ethiopia",
+    "season": "JJA",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "JAS",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "ASO",
+    "init": "2026-05"
+  }
+]
