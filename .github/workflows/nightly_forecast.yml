@@ -2,10 +2,8 @@
 name: Nightly Forecast
 
 on:
-  # Schedule is commented out until the first manual workflow_dispatch run
-  # completes cleanly end-to-end. Uncomment, then commit, to enable.
-  # schedule:
-  #   - cron: "0 2 * * *"   # 02:00 UTC daily
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC daily (≈ 9pm CT during DST, 8pm CT during ST)
   workflow_dispatch:
     inputs:
       only_country:
@@ -80,7 +78,7 @@ jobs:
           path: ~/.cache/rosetta/cds
           # Key on the country + a content hash of the config that drives
           # downloads. Cache invalidates only when models/region/period change.
-          key: cds-${{ matrix.country }}-${{ hashFiles('scripts/nightly/countries.yml') }}
+          key: cds-${{ matrix.country }}-${{ hashFiles('scripts/nightly/nightly.yml') }}
           restore-keys: |
             cds-${{ matrix.country }}-
 
@@ -115,7 +113,7 @@ jobs:
           from scripts.nightly.config import load_config
           from scripts.nightly.select_targets import select_targets
           country = os.environ['MATRIX_COUNTRY']
-          cfg = load_config('scripts/nightly/countries.yml')
+          cfg = load_config('scripts/nightly/nightly.yml')
           today = date.fromisoformat(os.environ['RUN_DATE'])
           ts = [
               [t.country, t.season, t.init_year, t.init_month]

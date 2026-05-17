@@ -1,6 +1,13 @@
 // scripts/nightly/site/app.js
 const COUNTRIES = ['kenya', 'ethiopia', 'nigeria'];
 
+// Chart.js defaults to dark-text-on-light-bg. Override globally so axes,
+// gridlines, and legend labels render readably on the dark page.
+if (typeof Chart !== 'undefined') {
+  Chart.defaults.color = '#9ca3af';        // tick labels + legend text
+  Chart.defaults.borderColor = '#2a2a2a';  // gridlines
+}
+
 // Escape anything we render via innerHTML so future free-text fields in
 // metrics.json (a `reason`, a label) can never execute. publish.py controls
 // all current inputs, but this keeps the trust boundary explicit.

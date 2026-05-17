@@ -12,20 +12,21 @@ sys.path.insert(0, str(REPO_ROOT))
 from scripts.nightly.config import Config, load_config
 
 
-def test_load_config_parses_countries_yaml():
-    cfg = load_config(REPO_ROOT / "scripts" / "nightly" / "countries.yml")
+def test_load_config_parses_nightly_yaml():
+    cfg = load_config(REPO_ROOT / "scripts" / "nightly" / "nightly.yml")
     assert isinstance(cfg, Config)
     assert set(cfg.countries) == {"kenya", "ethiopia", "nigeria"}
-    assert cfg.countries["kenya"].seasons["MAM"].init_months == [12, 1, 2]
-    assert cfg.countries["kenya"].seasons["MAM"].season_start_month == 3
-    assert cfg.shared.method == "cca"
-    assert cfg.shared.cv == "loyo"
-    assert cfg.shared.hindcast_period == (1993, 2016)
+    kenya = cfg.countries["kenya"]
+    assert kenya.seasons["MAM"].init_months == [12, 1, 2]
+    assert kenya.seasons["MAM"].season_start_month == 3
+    assert kenya.method == "cca"
+    assert kenya.cv == "loyo"
+    assert kenya.hindcast_period == (1993, 2016)
 
 
 def test_load_config_rejects_missing_required_field(tmp_path):
     bad = tmp_path / "bad.yml"
-    bad.write_text("shared: {}\ncountries: {}\n")
+    bad.write_text("countries:\n  kenya: {}\n")
     with pytest.raises(ValueError) as exc:
         load_config(bad)
     msg = str(exc.value)
@@ -41,7 +42,7 @@ from scripts.nightly.select_targets import Target, select_targets
 
 @pytest.fixture
 def cfg():
-    return load_config(REPO_ROOT / "scripts" / "nightly" / "countries.yml")
+    return load_config(REPO_ROOT / "scripts" / "nightly" / "nightly.yml")
 
 
 def test_kenya_mam_normal_init_month(cfg):

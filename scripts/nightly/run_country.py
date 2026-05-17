@@ -25,12 +25,12 @@ sys.path.insert(0, str(REPO_ROOT.parent / "rosetta" / "src"))
 
 import deepscale  # noqa: E402
 
-from scripts.nightly.config import Config, load_config  # noqa: E402
+from scripts.nightly.config import load_config  # noqa: E402
 from scripts.nightly.output_writer import write_output  # noqa: E402
 from scripts.nightly.select_targets import Target, select_targets  # noqa: E402
 
 
-def _fetch_obs(cfg: Config, country, target):
+def _fetch_obs(country, target):
     # We fetch the full monthly obs series for the hindcast period; seasonal
     # selection happens downstream in _to_obs_array using the season's
     # target_months. `target` is accepted for signature symmetry with
@@ -40,24 +40,24 @@ def _fetch_obs(cfg: Config, country, target):
     bbox = country.bbox
     region = [bbox["south"], bbox["north"], bbox["west"], bbox["east"]]
     return rosetta.fetch(
-        cfg.shared.observations,
-        cfg.shared.predictand_var,
-        hindcast=cfg.shared.hindcast_period,
+        country.observations,
+        country.predictand_var,
+        hindcast=country.hindcast_period,
         region=region,
     )
 
 
-def _fetch_gcm(cfg: Config, country, target, product: str):
+def _fetch_gcm(country, target, product: str):
     import rosetta
 
     bbox = country.bbox
     region = [bbox["south"], bbox["north"], bbox["west"], bbox["east"]]
     return rosetta.fetch(
         product,
-        cfg.shared.predictand_var,
+        country.predictand_var,
         init=f"{target.init_year}-{target.init_month:02d}",
         target=target.season,
-        hindcast=cfg.shared.hindcast_period,
+        hindcast=country.hindcast_period,
         region=region,
     )
 
@@ -96,28 +96,28 @@ def _to_gcm_array(gcm_ds, variable, hindcast_period):
     return da.sel(year=[y for y in years if y in da["year"].values])
 
 
-def _run_one_target(cfg: Config, country_name: str, country, target: Target,
+def _run_one_target(country_name: str, country, target: Target,
                     output_root: Path) -> dict:
     """Run seasonal_mme for one (country, season, init). Return status dict."""
     season = country.seasons[target.season]
-    variable = cfg.shared.predictand_var
-    obs_ds = _fetch_obs(cfg, country, target)
-    obs = _to_obs_array(obs_ds, variable, season.target_months, cfg.shared.hindcast_period)
+    variable = country.predictand_var
+    obs_ds = _fetch_obs(country, target)
+    obs = _to_obs_array(obs_ds, variable, season.target_months, country.hindcast_period)
 
     # v1: single-track predictand only. Multi-track (e.g. adding an SST
     # track for PyCPT-style dual-predictor MME) replaces this dict literal.
     predictor_tracks: dict[str, dict[str, tuple]] = {variable: {}}
-    for product in cfg.shared.models:
-        gcm_ds = _fetch_gcm(cfg, country, target, product)
-        gcm = _to_gcm_array(gcm_ds, variable, cfg.shared.hindcast_period)
+    for product in country.models:
+        gcm_ds = _fetch_gcm(country, target, product)
+        gcm = _to_gcm_array(gcm_ds, variable, country.hindcast_period)
         predictor_tracks[variable][product] = (gcm, None)
 
     result = deepscale.seasonal_mme(
         predictor_tracks,
         obs,
-        method=cfg.shared.method,
-        cv=cfg.shared.cv,
-        cpt_args=cfg.shared.cpt_args,
+        method=country.method,
+        cv=country.cv,
+        cpt_args=country.cpt_args,
         verbose=True,
     )
     write_output(
@@ -155,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--country", required=True)
     p.add_argument("--today", required=True, help="ISO date YYYY-MM-DD")
     p.add_argument("--output-root", required=True)
-    p.add_argument("--config", default=str(Path(__file__).parent / "countries.yml"))
+    p.add_argument("--config", default=str(Path(__file__).parent / "nightly.yml"))
     p.add_argument(
         "--kind", default="operational", choices=["operational", "rebench"],
         help="Forecast kind. operational = today's in-range targets via "
@@ -203,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     statuses: list[dict] = []
     for target in targets:
         try:
-            statuses.append(_run_one_target(cfg, args.country, country, target, output_root))
+            statuses.append(_run_one_target(args.country, country, target, output_root))
             print(f"[nightly] OK {args.country} {target.season} init {target.init_year}-{target.init_month:02d}")
         except Exception as exc:
             traceback.print_exc()

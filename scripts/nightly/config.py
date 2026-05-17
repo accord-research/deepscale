@@ -1,4 +1,4 @@
-"""Config loader. Parses scripts/nightly/countries.yml into typed objects."""
+"""Config loader. Parses scripts/nightly/nightly.yml into typed objects."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,11 +17,6 @@ class Season:
 @dataclass(frozen=True)
 class Country:
     bbox: dict[str, float]
-    seasons: dict[str, Season]
-
-
-@dataclass(frozen=True)
-class Shared:
     models: list[str]
     observations: str
     predictand_var: str
@@ -29,42 +24,33 @@ class Shared:
     cv: str
     method: str
     cpt_args: dict
+    seasons: dict[str, Season]
 
 
 @dataclass(frozen=True)
 class Config:
-    shared: Shared
     countries: dict[str, Country]
+
+
+_REQUIRED_COUNTRY_FIELDS = (
+    "bbox", "models", "observations", "predictand_var", "hindcast_period",
+    "cv", "method", "cpt_args", "seasons",
+)
 
 
 def load_config(path: str | Path) -> Config:
     raw = yaml.safe_load(Path(path).read_text())
-    if "shared" not in raw or "countries" not in raw:
-        raise ValueError("countries.yml must define 'shared' and 'countries'")
-
-    shared_raw = raw["shared"]
-    required_shared = (
-        "models", "observations", "predictand_var", "hindcast_period",
-        "cv", "method", "cpt_args",
-    )
-    missing = [key for key in required_shared if key not in shared_raw]
-    if missing:
-        raise ValueError(
-            "shared section missing required field(s): " + ", ".join(missing)
-        )
-
-    shared = Shared(
-        models=list(shared_raw["models"]),
-        observations=shared_raw["observations"],
-        predictand_var=shared_raw["predictand_var"],
-        hindcast_period=tuple(shared_raw["hindcast_period"]),
-        cv=shared_raw["cv"],
-        method=shared_raw["method"],
-        cpt_args=dict(shared_raw["cpt_args"]),
-    )
+    if "countries" not in raw:
+        raise ValueError("nightly.yml must define 'countries'")
 
     countries: dict[str, Country] = {}
     for name, c_raw in raw["countries"].items():
+        missing = [k for k in _REQUIRED_COUNTRY_FIELDS if k not in c_raw]
+        if missing:
+            raise ValueError(
+                f"country {name!r} missing required field(s): "
+                + ", ".join(missing)
+            )
         seasons = {
             s_name: Season(
                 init_months=list(s_raw["init_months"]),
@@ -73,6 +59,16 @@ def load_config(path: str | Path) -> Config:
             )
             for s_name, s_raw in c_raw["seasons"].items()
         }
-        countries[name] = Country(bbox=dict(c_raw["bbox"]), seasons=seasons)
+        countries[name] = Country(
+            bbox=dict(c_raw["bbox"]),
+            models=list(c_raw["models"]),
+            observations=c_raw["observations"],
+            predictand_var=c_raw["predictand_var"],
+            hindcast_period=tuple(c_raw["hindcast_period"]),
+            cv=c_raw["cv"],
+            method=c_raw["method"],
+            cpt_args=dict(c_raw["cpt_args"]),
+            seasons=seasons,
+        )
 
-    return Config(shared=shared, countries=countries)
+    return Config(countries=countries)

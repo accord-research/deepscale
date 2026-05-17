@@ -170,7 +170,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/rosetta/cds
-          key: cds-${{ matrix.country }}-${{ hashFiles('scripts/nightly/countries.yml') }}
+          key: cds-${{ matrix.country }}-${{ hashFiles('scripts/nightly/nightly.yml') }}
           restore-keys: |
             cds-${{ matrix.country }}-
 
