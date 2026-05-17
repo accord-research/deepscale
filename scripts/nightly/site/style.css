@@ -1,5 +1,16 @@
 /* scripts/nightly/site/style.css */
-body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5rem; color: #222; }
+
+/* Lock to light mode so dark-mode browsers don't auto-invert and clash
+   with our explicit colours. Easy to add a dark-mode @media block later. */
+:root { color-scheme: only light; }
+html, body { background: #fff; color: #222; }
+
+body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5rem; }
+
+/* Cap chart heights so they don't grow to fill the viewport when the
+   window is wide. */
+.chart-wrap { position: relative; height: 360px; max-width: 100%; }
+canvas { max-height: 360px; }
 header { border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; margin-bottom: 1rem; }
 header h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
 nav button {
