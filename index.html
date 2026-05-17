@@ -25,14 +25,18 @@
       <label>Season: <select id="trend-season"><option value="">All</option></select></label>
       <label>Metric: <select id="trend-metric">
         <option value="rpss" selected>RPSS</option>
-        <option value="roc_area">ROC area</option>
-        <option value="pearson">Pearson</option>
+        <option value="2afc">2AFC</option>
+        <option value="pearson_r">Pearson r</option>
+        <option value="heidke_skill_score">Heidke</option>
+        <option value="generalized_roc">Generalised ROC</option>
+        <option value="spearman">Spearman</option>
+        <option value="root_mean_squared_error">RMSE</option>
       </select></label>
     </div>
-    <canvas id="trend-chart" height="320"></canvas>
+    <div class="chart-wrap"><canvas id="trend-chart"></canvas></div>
     <h2>Latest skill snapshot</h2>
     <table id="latest-table"><thead>
-      <tr><th>Country</th><th>Season</th><th>RPSS</th><th>ROC</th><th>Pearson</th></tr>
+      <tr><th>Country</th><th>Season</th><th>Init</th><th>RPSS</th><th>2AFC</th><th>Pearson r</th><th>Heidke</th></tr>
     </thead><tbody></tbody></table>
   </section>
 
@@ -54,11 +58,13 @@
       <label>Forecast: <select id="rb-tuple"></select></label>
       <label>Metric: <select id="rb-metric">
         <option value="rpss" selected>RPSS</option>
-        <option value="roc_area">ROC area</option>
-        <option value="pearson">Pearson</option>
+        <option value="2afc">2AFC</option>
+        <option value="pearson_r">Pearson r</option>
+        <option value="heidke_skill_score">Heidke</option>
+        <option value="generalized_roc">Generalised ROC</option>
       </select></label>
     </div>
-    <canvas id="rebench-chart" height="320"></canvas>
+    <div class="chart-wrap"><canvas id="rebench-chart"></canvas></div>
   </section>
 
   <section id="tab-runs" class="tab">
