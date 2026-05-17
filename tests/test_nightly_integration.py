@@ -19,19 +19,19 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture
 def trimmed_config(tmp_path):
-    """A 3-year, 1-model variant of countries.yml for fast CDS roundtrip."""
+    """A 3-year, 1-model variant of nightly.yml for fast CDS roundtrip."""
     import yaml
 
-    src = REPO_ROOT / "scripts" / "nightly" / "countries.yml"
+    src = REPO_ROOT / "scripts" / "nightly" / "nightly.yml"
     data = yaml.safe_load(src.read_text())
-    # seasonal_mme requires >=5 years of overlap; use 6 to leave headroom.
-    data["shared"]["hindcast_period"] = [2010, 2015]
-    data["shared"]["models"] = ["c3s/ecmwf"]
     data["countries"] = {"kenya": data["countries"]["kenya"]}
+    # seasonal_mme requires >=5 years of overlap; use 6 to leave headroom.
+    data["countries"]["kenya"]["hindcast_period"] = [2010, 2015]
+    data["countries"]["kenya"]["models"] = ["c3s/ecmwf"]
     data["countries"]["kenya"]["seasons"] = {
         "MAM": data["countries"]["kenya"]["seasons"]["MAM"],
     }
-    cfg_path = tmp_path / "countries.yml"
+    cfg_path = tmp_path / "nightly.yml"
     cfg_path.write_text(yaml.safe_dump(data))
     return cfg_path
 

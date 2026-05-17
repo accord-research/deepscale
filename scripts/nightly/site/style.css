@@ -1,9 +1,10 @@
 /* scripts/nightly/site/style.css */
 
-/* Lock to light mode so dark-mode browsers don't auto-invert and clash
-   with our explicit colours. Easy to add a dark-mode @media block later. */
-:root { color-scheme: only light; }
-html, body { background: #fff; color: #222; }
+/* Lock to dark mode. Light-mode browsers won't auto-invert and the dark
+   colours stay explicit. To re-introduce a light alternative later, add a
+   @media (prefers-color-scheme: light) block. */
+:root { color-scheme: only dark; }
+html, body { background: #1a1a1a; color: #e5e5e5; }
 
 body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5rem; }
 
@@ -11,27 +12,31 @@ body { font-family: -apple-system, system-ui, sans-serif; margin: 1.5rem; }
    window is wide. */
 .chart-wrap { position: relative; height: 360px; max-width: 100%; }
 canvas { max-height: 360px; }
-header { border-bottom: 1px solid #ddd; padding-bottom: 0.5rem; margin-bottom: 1rem; }
+header { border-bottom: 1px solid #2a2a2a; padding-bottom: 0.5rem; margin-bottom: 1rem; }
 header h1 { margin: 0 0 0.5rem; font-size: 1.4rem; }
 nav button {
   border: none; background: transparent; padding: 0.4rem 0.8rem;
   cursor: pointer; font-size: 0.95rem; border-radius: 4px;
+  color: #e5e5e5;
 }
-nav button.active { background: #eef; color: #225; font-weight: 600; }
-#last-run { color: #666; font-size: 0.85rem; margin: 0.4rem 0 0; }
+nav button:hover { background: #222; }
+nav button.active { background: #1e3a5f; color: #93c5fd; font-weight: 600; }
+#last-run { color: #9ca3af; font-size: 0.85rem; margin: 0.4rem 0 0; }
 .tab { display: none; }
 .tab.active { display: block; }
 .controls { margin: 0.5rem 0 1rem; }
 .controls label { margin-right: 1rem; font-size: 0.9rem; }
-.tab-blurb { color: #555; font-size: 0.9rem; max-width: 60ch; margin: 0.5rem 0; }
+.tab-blurb { color: #9ca3af; font-size: 0.9rem; max-width: 60ch; margin: 0.5rem 0; }
 table { border-collapse: collapse; margin-top: 1rem; }
-th, td { padding: 0.35rem 0.8rem; border-bottom: 1px solid #eee; text-align: left; }
+th, td { padding: 0.35rem 0.8rem; border-bottom: 1px solid #2a2a2a; text-align: left; }
+tbody tr:hover { background: #222; }
 #fc-strip { display: flex; gap: 1rem; overflow-x: auto; }
 #fc-strip figure { margin: 0; }
-#fc-strip img { max-width: 320px; border: 1px solid #ddd; }
-#fc-strip figcaption { font-size: 0.85rem; text-align: center; color: #555; }
+#fc-strip img { max-width: 320px; border: 1px solid #2a2a2a; }
+#fc-strip figcaption { font-size: 0.85rem; text-align: center; color: #9ca3af; }
 #run-list { list-style: none; padding: 0; }
-#run-list li { padding: 0.35rem 0; border-bottom: 1px solid #f0f0f0; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+#run-list li { padding: 0.35rem 0; border-bottom: 1px solid #222; font-family: ui-monospace, monospace; font-size: 0.9rem; }
 .badge { padding: 0.1rem 0.45rem; border-radius: 3px; font-size: 0.8rem; margin-left: 0.25rem; }
-.badge.ok { background: #d9f5dc; color: #15602f; }
-.badge.fail { background: #fcd9d9; color: #6b1818; }
+.badge.ok { background: #1f4d2b; color: #86efac; }
+.badge.fail { background: #4d1f1f; color: #fca5a5; }
+code { color: #d4d4d4; }
