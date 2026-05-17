@@ -22,24 +22,66 @@ shared:
     x_eof_modes: 8
     y_eof_modes: 6
 
-# Each country runs the full MAM + JJAS + OND rotation regardless of local
-# climatology. Some (country, season) pairs are climatologically dry (e.g.
-# Kenya JJAS) and will yield low-skill forecasts — that's fine, the dashboard
-# still tracks them and a flat/zero skill line is informative data.
+# Every country runs the full set of 12 overlapping 3-month seasons that
+# rosetta's `target=` kwarg accepts (DJF, JFM, FMA, ..., NDJ). This gives the
+# dashboard uniform monthly coverage: every calendar month has multiple
+# seasons in their issuance window, so there are never gap-day no-target
+# runs. Some (country, season) pairs are climatologically dry (e.g. Kenya
+# JJA) and will yield low-skill forecasts — that's fine, the dashboard still
+# tracks them and a flat skill line is informative data.
+#
+# Convention: init_months are the three months immediately preceding
+# season_start_month (1-3 month lead times — operational standard).
 
 _season_defaults: &season_defaults
+  DJF:
+    init_months: [9, 10, 11]
+    target_months: [12, 1, 2]
+    season_start_month: 12
+  JFM:
+    init_months: [10, 11, 12]
+    target_months: [1, 2, 3]
+    season_start_month: 1
+  FMA:
+    init_months: [11, 12, 1]
+    target_months: [2, 3, 4]
+    season_start_month: 2
   MAM:
     init_months: [12, 1, 2]
     target_months: [3, 4, 5]
     season_start_month: 3
-  JJAS:
+  AMJ:
+    init_months: [1, 2, 3]
+    target_months: [4, 5, 6]
+    season_start_month: 4
+  MJJ:
+    init_months: [2, 3, 4]
+    target_months: [5, 6, 7]
+    season_start_month: 5
+  JJA:
     init_months: [3, 4, 5]
-    target_months: [6, 7, 8, 9]
+    target_months: [6, 7, 8]
     season_start_month: 6
+  JAS:
+    init_months: [4, 5, 6]
+    target_months: [7, 8, 9]
+    season_start_month: 7
+  ASO:
+    init_months: [5, 6, 7]
+    target_months: [8, 9, 10]
+    season_start_month: 8
+  SON:
+    init_months: [6, 7, 8]
+    target_months: [9, 10, 11]
+    season_start_month: 9
   OND:
     init_months: [7, 8, 9]
     target_months: [10, 11, 12]
     season_start_month: 10
+  NDJ:
+    init_months: [8, 9, 10]
+    target_months: [11, 12, 1]
+    season_start_month: 11
 
 countries:
   kenya:
