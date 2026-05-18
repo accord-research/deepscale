@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -56,12 +57,17 @@ def write_output(
     fig.savefig(base / "tercile_map.png", dpi=110)
     plt.close(fig)
 
-    # skill_metrics.json — flat float scores only
-    scores = {
-        k: float(v)
-        for k, v in result.skill_report.scores.items()
-        if isinstance(v, (int, float))
-    }
-    (base / "skill_metrics.json").write_text(json.dumps(scores, indent=2))
+    # skill_metrics.json — flat float scores only. NaN/inf become null so the
+    # output is spec-valid JSON (browsers' JSON.parse rejects bare NaN tokens
+    # that Python's json.dumps would otherwise emit).
+    scores: dict[str, float | None] = {}
+    for k, v in result.skill_report.scores.items():
+        if not isinstance(v, (int, float)):
+            continue
+        f = float(v)
+        scores[k] = f if math.isfinite(f) else None
+    (base / "skill_metrics.json").write_text(
+        json.dumps(scores, indent=2, allow_nan=False)
+    )
 
     return base

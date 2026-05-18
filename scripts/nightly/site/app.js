@@ -24,9 +24,17 @@ function shortSha(sha) {
 async function loadJSON(path, fallback) {
   try {
     const r = await fetch(path, {cache: 'no-store'});
-    if (!r.ok) return fallback;
+    if (!r.ok) {
+      console.warn(`loadJSON ${path}: HTTP ${r.status}`);
+      return fallback;
+    }
     return await r.json();
-  } catch (e) { return fallback; }
+  } catch (e) {
+    // A silent catch here once hid a NaN-in-metrics.json bug that blanked the
+    // entire dashboard. Surface it loudly instead.
+    console.error(`loadJSON ${path} failed:`, e);
+    return fallback;
+  }
 }
 
 function byTab(name) {
@@ -148,13 +156,17 @@ function renderForecasts(index) {
       .filter(e => e.country === c && e.season === fcSeason.value)
       .sort((a, b) => a.init.localeCompare(b.init));
     const strip = document.getElementById('fc-strip');
-    strip.innerHTML = inits.map(e => `
-      <figure>
-        <img src="forecasts/${encodeURIComponent(e.country)}/${encodeURIComponent(e.season)}/${encodeURIComponent(e.init)}/tercile_map.png"
-             alt="${esc(e.country)} ${esc(e.season)} ${esc(e.init)}">
-        <figcaption>Init ${esc(e.init)}</figcaption>
-      </figure>
-    `).join('');
+    strip.innerHTML = inits.map(e => {
+      const src = `forecasts/${encodeURIComponent(e.country)}/${encodeURIComponent(e.season)}/${encodeURIComponent(e.init)}/tercile_map.png`;
+      return `
+        <figure>
+          <a href="${src}" target="_blank" rel="noopener">
+            <img src="${src}" alt="${esc(e.country)} ${esc(e.season)} ${esc(e.init)}">
+          </a>
+          <figcaption>Init ${esc(e.init)}</figcaption>
+        </figure>
+      `;
+    }).join('');
   }
   fcCountry.addEventListener('change', refresh);
   fcSeason.addEventListener('change', refresh);

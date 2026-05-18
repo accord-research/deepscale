@@ -340,6 +340,46 @@ def test_publish_appends_unconditionally(tmp_path):
     assert all(r["commit"] == "abc" for r in rows)
 
 
+def test_publish_emits_spec_valid_json_when_metrics_contain_nan(tmp_path):
+    """metrics.json must be parseable by browsers' JSON.parse, which rejects
+    bare NaN/Infinity tokens that Python's json.dumps emits by default. When a
+    skill metric computes to NaN (e.g. zero variance on a tile), publish must
+    substitute null so the dashboard keeps rendering. Regression test for the
+    silent blank-dashboard bug on the 2026-05-18 nightly run.
+    """
+    from scripts.nightly.publish import publish
+
+    artifacts = tmp_path / "artifacts"
+    _seed_artifact_tree(
+        artifacts, "kenya", "MAM", "2026-02",
+        metrics={"rpss": float("nan"), "roc_area": 0.71, "pearson": float("inf")},
+    )
+    site = tmp_path / "site"
+    site.mkdir()
+
+    publish(
+        artifacts_root=artifacts,
+        site_root=site,
+        run_date="2026-05-18",
+        commit_sha="deadbee",
+        expected=[("kenya", "MAM", 2026, 2)],
+    )
+
+    raw = (site / "metrics.json").read_text()
+    assert "NaN" not in raw
+    assert "Infinity" not in raw
+    # Strict-mode json.loads rejects bare NaN/Infinity the same way browsers do.
+    import json as _json
+    rows = _json.loads(raw, parse_constant=_strict_parse_constant)
+    assert rows[0]["metrics"]["rpss"] is None
+    assert rows[0]["metrics"]["pearson"] is None
+    assert rows[0]["metrics"]["roc_area"] == pytest.approx(0.71)
+
+
+def _strict_parse_constant(c):  # used by the spec-JSON test above
+    raise ValueError(f"non-spec JSON token: {c}")
+
+
 def test_publish_writes_rebench_kind(tmp_path):
     """publish with kind='rebench' tags rows accordingly so the dashboard can
     distinguish operational issuances from retrospective re-runs."""

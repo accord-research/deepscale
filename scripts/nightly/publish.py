@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import shutil
 from pathlib import Path
+from typing import Any
 
 
 def _atomic_write_text(path: Path, content: str) -> None:
@@ -19,6 +21,24 @@ def _atomic_write_text(path: Path, content: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(content)
     os.replace(tmp, path)
+
+
+def _spec_json_dumps(obj: Any, **kw: Any) -> str:
+    """json.dumps that emits spec-valid JSON. Python's default emits bare
+    NaN/Infinity tokens that JSON.parse rejects in the browser, which silently
+    blanks the entire dashboard. Replace non-finite floats with null and use
+    allow_nan=False so a future stray NaN raises loudly instead of slipping
+    through.
+    """
+    def clean(o: Any) -> Any:
+        if isinstance(o, float):
+            return o if math.isfinite(o) else None
+        if isinstance(o, dict):
+            return {k: clean(v) for k, v in o.items()}
+        if isinstance(o, list):
+            return [clean(v) for v in o]
+        return o
+    return json.dumps(clean(obj), allow_nan=False, **kw)
 
 
 def publish(
@@ -102,7 +122,7 @@ def publish(
                 "reason": "artifact_missing",
             })
 
-    _atomic_write_text(metrics_path, json.dumps(existing + new_rows, indent=2))
+    _atomic_write_text(metrics_path, _spec_json_dumps(existing + new_rows, indent=2))
 
     # forecasts/index.json — flat list of all forecast folders that exist on
     # the site after this run. Rebuilt every time so removals (if we ever add
@@ -127,7 +147,7 @@ def publish(
                 }
                 if entry not in full_index:
                     full_index.append(entry)
-    _atomic_write_text(forecasts_root / "index.json", json.dumps(full_index, indent=2))
+    _atomic_write_text(forecasts_root / "index.json", _spec_json_dumps(full_index, indent=2))
 
 
 def _cli() -> None:

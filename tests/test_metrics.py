@@ -51,6 +51,75 @@ def test_rpss_shape_spatial(climatology_forecast, synthetic_obs):
     assert "lat" in result.dims and "lon" in result.dims
 
 
+def test_cpt_boundaries_masks_degenerate_cells():
+    """t33 == t67 means the middle third of the sample is a single value, so
+    there's no usable tercile partition for that cell. Mask it NaN instead of
+    silently bucketing every obs into tercile 2 via the strict `>` rule.
+
+    Regression: the 2026-05-18 nightly run produced NaN for rpss/reliability/
+    groc on kenya + nigeria because dry-season CHIRPS cells (>= 2/3 zeros)
+    yielded t33 = t67 = 0, and the categorization collapsed silently.
+    """
+    from deepscale.metrics.rpss import _cpt_boundaries
+
+    n_year = 24
+    # Mix of three cell types in a tiny (2, 2) spatial grid:
+    #   (0,0) all-zero — degenerate
+    #   (0,1) mostly-zero with a few drizzle years — also degenerate (t33==t67==0)
+    #   (1,0) constant nonzero — degenerate (t33==t67==const)
+    #   (1,1) varied — non-degenerate
+    rng = np.random.default_rng(0)
+    obs = np.zeros((n_year, 2, 2))
+    obs[rng.choice(n_year, 4, replace=False), 0, 1] = rng.uniform(0.5, 5, 4)
+    obs[:, 1, 0] = 7.0
+    obs[:, 1, 1] = rng.gamma(2.0, 50.0, size=n_year)
+
+    t33, t67 = _cpt_boundaries(obs)
+    assert np.isnan(t33[0, 0]) and np.isnan(t67[0, 0])
+    assert np.isnan(t33[0, 1]) and np.isnan(t67[0, 1])
+    assert np.isnan(t33[1, 0]) and np.isnan(t67[1, 0])
+    assert np.isfinite(t33[1, 1]) and np.isfinite(t67[1, 1])
+    assert t33[1, 1] < t67[1, 1]
+
+
+def test_rpss_survives_mixed_degenerate_and_varied_cells(synthetic_obs):
+    """A domain with some all-zero (dry) cells alongside normal cells should
+    yield a real RPSS computed over the non-degenerate cells, not NaN across
+    the board. Companion to the 2026-05-18 nightly regression — before the
+    `_cpt_boundaries` mask, even one degenerate cell could be enough to ruin
+    the pooled score; after the mask, the metric averages only valid cells.
+    """
+    from deepscale.metrics.rpss import RPSSMetric, _cpt_boundaries
+
+    # Force the first lat slice to all-zero (a dry-season strip), leaving the
+    # rest of the synthetic obs intact.
+    obs = synthetic_obs.copy()
+    obs.values[:, 0, :] = 0.0
+
+    t33, t67 = _cpt_boundaries(obs.values)
+    # The all-zero strip must be masked, the rest must remain finite.
+    assert np.all(np.isnan(t33[0, :]))
+    assert np.any(np.isfinite(t33[1:, :]))
+
+    # A climatological 1/3,1/3,1/3 forecast yields RPSS ≈ 0 on the valid cells
+    # (and the dry strip is NaN-masked out of the average), so the pooled
+    # score must be finite — NOT NaN.
+    n_year = obs.sizes["year"]
+    n_lat = obs.sizes["lat"]
+    n_lon = obs.sizes["lon"]
+    fcst_vals = np.ones((n_year, 3, n_lat, n_lon)) / 3.0
+    forecast = xr.DataArray(
+        fcst_vals,
+        dims=["year", "tercile", "lat", "lon"],
+        coords={
+            "year": obs.year, "tercile": [0, 1, 2],
+            "lat": obs.lat, "lon": obs.lon,
+        },
+    )
+    score = RPSSMetric().compute(forecast, obs)
+    assert np.isfinite(score), f"expected finite RPSS, got {score}"
+
+
 # ===================================================================
 # 5. ROC metric
 # ===================================================================
