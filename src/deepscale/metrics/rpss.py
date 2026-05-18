@@ -33,6 +33,13 @@ def _cpt_boundaries(obs_arr):
     Returns
     -------
     t33, t67 : np.ndarray, shape (...) — lower and upper tercile boundaries.
+        Cells where the sample is degenerate (t33 == t67 — e.g. a dry-season
+        CHIRPS cell with >=2/3 of years exactly 0) are masked NaN, since a
+        tercile partition isn't defined when the middle third collapses to a
+        point. Downstream metrics already treat NaN boundaries as "skip this
+        cell"; without this mask the strict `>` categorization buckets every
+        obs into a single tercile, which silently breaks RPSS/reliability/
+        GROC (regression: 2026-05-18 nightly, kenya + nigeria).
     """
     spatial_shape = obs_arr.shape[1:]
     t33 = np.full(spatial_shape, np.nan)
@@ -43,8 +50,12 @@ def _cpt_boundaries(obs_arr):
         if len(valid) < 3:
             continue
         sv = np.sort(valid)
-        t33[idx] = _q_empirical(sv, 1.0 / 3.0)
-        t67[idx] = _q_empirical(sv, 2.0 / 3.0)
+        lo = _q_empirical(sv, 1.0 / 3.0)
+        hi = _q_empirical(sv, 2.0 / 3.0)
+        if lo == hi:
+            continue  # leave NaN — degenerate sample, no usable partition
+        t33[idx] = lo
+        t67[idx] = hi
     return t33, t67
 
 
