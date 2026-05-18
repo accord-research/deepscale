@@ -609,14 +609,14 @@
       "root_mean_squared_error": 11262.81479945792,
       "spearman": -0.06765476020900084,
       "2afc": 0.4697152878599192,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/JJA/2026-05"
   },
@@ -633,14 +633,14 @@
       "root_mean_squared_error": 2789.521775780642,
       "spearman": 0.12177574728666342,
       "2afc": 0.5490360234077716,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/JAS/2026-05"
   },
@@ -657,14 +657,14 @@
       "root_mean_squared_error": 28680.695102328194,
       "spearman": -0.06152747037423664,
       "2afc": 0.4814517722050184,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/ASO/2026-05"
   },
@@ -681,14 +681,14 @@
       "root_mean_squared_error": 18249.16995773487,
       "spearman": -0.034471996942814664,
       "2afc": 0.486947475691048,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/JJA/2026-05"
   },
@@ -705,14 +705,14 @@
       "root_mean_squared_error": 13305.825790642904,
       "spearman": -0.060613137446399935,
       "2afc": 0.48367372935330327,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/JAS/2026-05"
   },
@@ -729,14 +729,14 @@
       "root_mean_squared_error": 18270.101070174827,
       "spearman": -0.1548724045688064,
       "2afc": 0.4338053585834953,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/ASO/2026-05"
   },
@@ -753,14 +753,14 @@
       "root_mean_squared_error": 12712.739263165942,
       "spearman": 0.0205726919655083,
       "2afc": 0.5070334292401872,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/ethiopia/JJA/2026-05"
   },
@@ -777,14 +777,14 @@
       "root_mean_squared_error": 14983.491973468143,
       "spearman": -0.05276697600659931,
       "2afc": 0.4827945489448543,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/ethiopia/JAS/2026-05"
   },
@@ -801,14 +801,14 @@
       "root_mean_squared_error": 15981.10242500428,
       "spearman": 0.02877973864851185,
       "2afc": 0.51229195155639,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/ethiopia/ASO/2026-05"
   },
@@ -825,14 +825,14 @@
       "root_mean_squared_error": 11262.81479945792,
       "spearman": -0.06765476020900084,
       "2afc": 0.4697152878599192,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/JJA/2026-05"
   },
@@ -849,14 +849,14 @@
       "root_mean_squared_error": 2789.521775780642,
       "spearman": 0.12177574728666342,
       "2afc": 0.5490360234077716,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/JAS/2026-05"
   },
@@ -873,14 +873,14 @@
       "root_mean_squared_error": 30714.803880102285,
       "spearman": -0.2385958030686459,
       "2afc": 0.40572778072173493,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/kenya/ASO/2026-05"
   },
@@ -897,14 +897,14 @@
       "root_mean_squared_error": 9380.332129018523,
       "spearman": 0.006135013981814343,
       "2afc": 0.4994720677112214,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/JJA/2026-05"
   },
@@ -921,14 +921,14 @@
       "root_mean_squared_error": 10278.20762766369,
       "spearman": 0.062051353597359894,
       "2afc": 0.5259309583456799,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/JAS/2026-05"
   },
@@ -945,15 +945,87 @@
       "root_mean_squared_error": 6350.9148821130975,
       "spearman": 0.17564677265749926,
       "2afc": 0.5675357026593632,
-      "rpss": NaN,
+      "rpss": null,
       "roc_bn": 0.5,
       "roc_nn": 0.5,
       "roc_an": 0.5,
       "roc_area_below_normal": 0.5,
       "roc_area_above_normal": 0.5,
-      "reliability": NaN,
-      "generalized_roc": NaN
+      "reliability": null,
+      "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/ASO/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-18",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "kenya",
+    "season": "JJA",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": -0.0496359261733994,
+      "root_mean_squared_error": 22794.817472822924,
+      "spearman": 0.05505531036813703,
+      "2afc": 0.5175733397578207,
+      "rpss": null,
+      "roc_bn": 0.5,
+      "roc_nn": 0.5,
+      "roc_an": 0.5,
+      "roc_area_below_normal": 0.5,
+      "roc_area_above_normal": 0.5,
+      "reliability": null,
+      "generalized_roc": null
+    },
+    "forecast_dir": "forecasts/kenya/JJA/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-18",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "kenya",
+    "season": "JAS",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": -0.13179697005638136,
+      "root_mean_squared_error": 10217.465962856231,
+      "spearman": -0.12447781835656137,
+      "2afc": 0.45461012154052916,
+      "rpss": null,
+      "roc_bn": 0.5,
+      "roc_nn": 0.5,
+      "roc_an": 0.5,
+      "roc_area_below_normal": 0.5,
+      "roc_area_above_normal": 0.5,
+      "reliability": null,
+      "generalized_roc": null
+    },
+    "forecast_dir": "forecasts/kenya/JAS/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-18",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "kenya",
+    "season": "ASO",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": -0.11735722311927657,
+      "root_mean_squared_error": 27884.56485922656,
+      "spearman": -0.18958291888178658,
+      "2afc": 0.4237995758712174,
+      "rpss": null,
+      "roc_bn": 0.5,
+      "roc_nn": 0.5,
+      "roc_an": 0.5,
+      "roc_area_below_normal": 0.5,
+      "roc_area_above_normal": 0.5,
+      "reliability": null,
+      "generalized_roc": null
+    },
+    "forecast_dir": "forecasts/kenya/ASO/2026-05"
   }
 ]
