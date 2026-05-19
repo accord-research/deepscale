@@ -1,5 +1,20 @@
 [
   {
+    "country": "ethiopia",
+    "season": "JJA",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "JAS",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "ASO",
+    "init": "2026-05"
+  },
+  {
     "country": "kenya",
     "season": "JJA",
     "init": "2026-05"
@@ -15,23 +30,8 @@
     "init": "2026-05"
   },
   {
-    "country": "ethiopia",
-    "season": "ASO",
-    "init": "2026-05"
-  },
-  {
-    "country": "ethiopia",
-    "season": "JAS",
-    "init": "2026-05"
-  },
-  {
-    "country": "ethiopia",
-    "season": "JJA",
-    "init": "2026-05"
-  },
-  {
     "country": "nigeria",
-    "season": "ASO",
+    "season": "JJA",
     "init": "2026-05"
   },
   {
@@ -41,7 +41,7 @@
   },
   {
     "country": "nigeria",
-    "season": "JJA",
+    "season": "ASO",
     "init": "2026-05"
   }
 ]
