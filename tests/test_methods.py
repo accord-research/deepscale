@@ -531,3 +531,109 @@ def test_rank_analog_predict_squeezes_singleton_year(
     fc_with_year = synthetic_gcm_forecast.expand_dims(year=[2030])
     result = m.predict(fc_with_year)
     assert result.dims == ("member", "lat", "lon")
+
+
+# ===================================================================
+# 6. Climatology baseline method
+# ===================================================================
+
+def test_climatology_registry_lookup():
+    """The climatology method registers under the canonical name."""
+    from deepscale.registry import get_method
+    from deepscale.methods.climatology import ClimatologyMethod
+    assert get_method("climatology") is ClimatologyMethod
+
+
+def test_climatology_fit_stores_state(synthetic_gcm_hindcast, synthetic_obs):
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert hasattr(m, "climatology_")
+    assert hasattr(m, "obs_coords_")
+
+
+def test_climatology_fit_climatology_is_obs_mean(synthetic_gcm_hindcast, synthetic_obs):
+    """climatology_ must equal the per-cell mean of obs along the year axis."""
+    import numpy as np
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    expected = synthetic_obs.mean("year").values
+    np.testing.assert_allclose(m.climatology_.values, expected)
+
+
+def test_climatology_fit_climatology_is_on_obs_grid(synthetic_gcm_hindcast, synthetic_obs):
+    """climatology_ has the obs lat/lon shape, no member, no year."""
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert m.climatology_.dims == ("lat", "lon")
+    assert len(m.climatology_.lat) == len(synthetic_obs.lat)
+    assert len(m.climatology_.lon) == len(synthetic_obs.lon)
+
+
+def test_climatology_predict_shape(synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs):
+    """predict() returns (member, lat, lon) on the obs grid."""
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    assert result.dims == ("member", "lat", "lon")
+    assert len(result.lat) == len(synthetic_obs.lat)
+    assert len(result.lon) == len(synthetic_obs.lon)
+    assert len(result.member) == len(synthetic_gcm_forecast.member)
+
+
+def test_climatology_predict_is_constant_across_members(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """Every member must hold the same climatology field — no member-to-member variance."""
+    import numpy as np
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    member0 = result.isel(member=0).values
+    for m_idx in range(1, len(result.member)):
+        np.testing.assert_array_equal(result.isel(member=m_idx).values, member0)
+
+
+def test_climatology_predict_ignores_forecast_values(
+    synthetic_gcm_hindcast, synthetic_obs,
+):
+    """Doubling the forecast values must not change predict()'s output."""
+    import numpy as np
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    fcst_a = synthetic_gcm_hindcast.isel(year=0, drop=True)
+    fcst_b = fcst_a * 2.0
+    result_a = m.predict(fcst_a)
+    result_b = m.predict(fcst_b)
+    np.testing.assert_array_equal(result_a.values, result_b.values)
+
+
+def test_climatology_predict_member_coord_preserved(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """Member coordinate values pass through unchanged."""
+    import numpy as np
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    np.testing.assert_array_equal(
+        result.member.values, synthetic_gcm_forecast.member.values
+    )
+
+
+def test_climatology_predict_squeezes_singleton_year(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """A forecast with a singleton year axis (CV-loop pattern) is handled cleanly."""
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    fc_with_year = synthetic_gcm_forecast.expand_dims(year=[2030])
+    result = m.predict(fc_with_year)
+    assert result.dims == ("member", "lat", "lon")
