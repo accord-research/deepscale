@@ -5,16 +5,6 @@
     "init": "2026-05"
   },
   {
-    "country": "ethiopia",
-    "season": "JAS",
-    "init": "2026-05"
-  },
-  {
-    "country": "ethiopia",
-    "season": "ASO",
-    "init": "2026-05"
-  },
-  {
     "country": "kenya",
     "season": "JJA",
     "init": "2026-05"
@@ -42,6 +32,16 @@
   {
     "country": "nigeria",
     "season": "ASO",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "ASO",
+    "init": "2026-05"
+  },
+  {
+    "country": "ethiopia",
+    "season": "JAS",
     "init": "2026-05"
   }
 ]
