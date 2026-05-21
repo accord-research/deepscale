@@ -385,3 +385,149 @@ def test_cca_same_grid_case_still_works():
     assert result.shape == (len(members), len(lat), len(lon))
     assert m.predictor_shape_ == m.predictand_shape_ == (len(lat), len(lon))
     assert not np.any(np.isnan(result.values))
+
+
+# ===================================================================
+# 5. Rank-analog method
+# ===================================================================
+
+def test_rank_analog_registry_lookup():
+    """The rank-analog method registers under the canonical name."""
+    from deepscale.registry import get_method
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    assert get_method("rank-analog") is RankAnalogMethod
+
+
+def test_rank_analog_fit_stores_state(synthetic_gcm_hindcast, synthetic_obs):
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert hasattr(m, "obs_sorted_")
+    assert hasattr(m, "hindcast_mean_")
+    assert hasattr(m, "obs_coords_")
+    assert hasattr(m, "gcm_coords_")
+    assert hasattr(m, "upscale_factor_")
+    assert hasattr(m, "n_years_")
+
+
+def test_rank_analog_fit_obs_sorted_is_ascending_per_cell(synthetic_gcm_hindcast, synthetic_obs):
+    """obs_sorted_[k, i, j] must be non-decreasing in k for every cell."""
+    import numpy as np
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    sorted_vals = m.obs_sorted_.values
+    diffs = np.diff(sorted_vals, axis=0)
+    assert (diffs >= 0).all(), "obs_sorted_ is not ascending along the year axis at every cell"
+
+
+def test_rank_analog_fit_hindcast_mean_collapses_member(synthetic_gcm_hindcast, synthetic_obs):
+    """fit() reduces ensemble members to their mean per (year, lat, lon)."""
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert "member" not in m.hindcast_mean_.dims
+    assert m.hindcast_mean_.dims == ("year", "lat", "lon")
+
+
+def test_rank_analog_fit_auto_upscale_factor(synthetic_gcm_hindcast, synthetic_obs):
+    """Auto-derived upscale_factor_ is a positive integer matching the grid ratio."""
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    expected = max(
+        round(len(synthetic_obs.lat) / len(synthetic_gcm_hindcast.lat)),
+        round(len(synthetic_obs.lon) / len(synthetic_gcm_hindcast.lon)),
+        1,
+    )
+    assert isinstance(m.upscale_factor_, int)
+    assert m.upscale_factor_ == expected
+
+
+def test_rank_analog_fit_explicit_upscale_factor_honored(synthetic_gcm_hindcast, synthetic_obs):
+    """When upscale_factor is passed to __init__, fit() preserves it verbatim."""
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod(upscale_factor=7)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert m.upscale_factor_ == 7
+
+
+def test_rank_analog_predict_shape(synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs):
+    """predict() returns (member, lat, lon) on the obs grid."""
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    assert result.dims == ("member", "lat", "lon")
+    assert len(result.lat) == len(synthetic_obs.lat)
+    assert len(result.lon) == len(synthetic_obs.lon)
+    assert len(result.member) == len(synthetic_gcm_forecast.member)
+
+
+def test_rank_analog_predict_values_bounded_by_obs(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """Output values fall inside the range of the obs climatology
+    (rank-analog can only emit observed values)."""
+    import numpy as np
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    obs_min = float(synthetic_obs.min())
+    obs_max = float(synthetic_obs.max())
+    assert float(result.min()) >= obs_min - 1e-6
+    assert float(result.max()) <= obs_max + 1e-6
+
+
+def test_rank_analog_predict_member_coord_preserved(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """Member coordinate values pass through unchanged."""
+    import numpy as np
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    result = m.predict(synthetic_gcm_forecast)
+    np.testing.assert_array_equal(
+        result.member.values, synthetic_gcm_forecast.member.values
+    )
+
+
+def test_rank_analog_predict_high_forecast_yields_high_obs(
+    synthetic_gcm_hindcast, synthetic_obs,
+):
+    """A forecast far above the hindcast climatology should map to the top
+    of the obs climatology at every cell."""
+    import numpy as np
+    import xarray as xr
+    from deepscale.methods.rank_analog import RankAnalogMethod
+
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+
+    high_value = float(synthetic_gcm_hindcast.max()) + 100.0
+    forecast = xr.full_like(
+        synthetic_gcm_hindcast.isel(year=0, drop=True), high_value
+    )
+    result = m.predict(forecast)
+
+    obs_top = synthetic_obs.max("year")
+    np.testing.assert_array_less(
+        (obs_top.values - result.mean("member").values),
+        ((obs_top.values - synthetic_obs.min("year").values) /
+         max(synthetic_obs.sizes["year"] - 1, 1)) + 1e-6,
+    )
+
+
+def test_rank_analog_predict_squeezes_singleton_year(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs,
+):
+    """If the forecast still carries a singleton year dim (CV-loop pattern),
+    predict() squeezes it cleanly."""
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    m = RankAnalogMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    fc_with_year = synthetic_gcm_forecast.expand_dims(year=[2030])
+    result = m.predict(fc_with_year)
+    assert result.dims == ("member", "lat", "lon")

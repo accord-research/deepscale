@@ -1,4 +1,4 @@
-from . import bcsd, cca
+from . import bcsd, cca, rank_analog
 
 try:
     from . import corrdiff
