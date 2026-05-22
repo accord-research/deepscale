@@ -88,13 +88,24 @@ See `deepscale/examples/README.md` for full prerequisites and output details.
 
 Rosetta handles acquisition and normalization. DeepScale handles forecasting logic and verification. The boundary is standardized xarray data, so DeepScale remains source-agnostic.
 
-## Nightly forecasts
+## Seasonal pipeline (currently unscheduled)
 
-A nightly GitHub Actions workflow (`.github/workflows/nightly_forecast.yml`) runs the seasonal pipeline for Kenya, Ethiopia, and Nigeria and publishes skill metrics + forecast plots to a static dashboard at [https://accord-research.github.io/deepscale/](https://accord-research.github.io/deepscale/).
+DeepScale shipped a nightly GitHub Actions workflow that ran the seasonal forecast pipeline for Kenya, Ethiopia, and Nigeria and published results to a static dashboard at [https://accord-research.github.io/deepscale/](https://accord-research.github.io/deepscale/). **That workflow has been retired** — SEAS5 only republishes monthly and CHIRPS observations lag by ~2 months, so daily runs produced ~95% redundant output for the cost of CI time and dashboard churn.
 
-- Per-country parameters live in [`scripts/nightly/nightly.yml`](scripts/nightly/nightly.yml).
-- The matrix runs one country per `ubuntu-latest` runner; the gather job appends a row per `(country, season)` to `metrics.json` on the `gh-pages` branch, with `status: "failed"` for any country whose job did not complete (partial-publish-on-failure).
-- See the design at [`docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md`](docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md) and the implementation plan at [`docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md`](docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md).
+The seasonal pipeline code remains intact for on-demand local execution:
+
+```bash
+uv run python -m scripts.nightly.run_country \
+  --country ethiopia \
+  --today 2026-05-19 \
+  --output-root output/
+```
+
+- Per-country parameters: [`scripts/nightly/nightly.yml`](scripts/nightly/nightly.yml).
+- Original design + plan: [`docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md`](docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md), [`docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md`](docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md).
+- The `gh-pages` branch is preserved as a frozen snapshot of the last published seasonal output.
+
+The replacement, a sub-seasonal downscaling testbed with daily cadence justified by faster-arriving ground truth, is designed in [`docs/superpowers/specs/2026-05-19-s2s-downscaling-testbed-design.md`](docs/superpowers/specs/2026-05-19-s2s-downscaling-testbed-design.md) and will land in subsequent plans.
 
 ## Repository hygiene
 
