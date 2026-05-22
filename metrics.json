@@ -1867,5 +1867,77 @@
       "generalized_roc": null
     },
     "forecast_dir": "forecasts/nigeria/ASO/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-22",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "ethiopia",
+    "season": "JJA",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": -0.05770918705344191,
+      "root_mean_squared_error": 0.7392175614840647,
+      "spearman": -0.05172702044078886,
+      "2afc": 0.4825924952482922,
+      "rpss": -0.10579074333014327,
+      "roc_bn": 0.5015290860639462,
+      "roc_nn": 0.5006145393379985,
+      "roc_an": 0.5019033985643437,
+      "roc_area_below_normal": 0.5015290860639462,
+      "roc_area_above_normal": 0.5019033985643437,
+      "reliability": 0.023526610357741902,
+      "generalized_roc": 0.4936589184163857
+    },
+    "forecast_dir": "forecasts/ethiopia/JJA/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-22",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "ethiopia",
+    "season": "JAS",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": -0.034744436443012304,
+      "root_mean_squared_error": 0.7854716475228517,
+      "spearman": -0.03132154465115969,
+      "2afc": 0.4889618644884787,
+      "rpss": -0.09715950124012518,
+      "roc_bn": 0.49995342415209887,
+      "roc_nn": 0.499438407525447,
+      "roc_an": 0.4993737099652986,
+      "roc_area_below_normal": 0.49995342415209887,
+      "roc_area_above_normal": 0.4993737099652986,
+      "reliability": 0.02149275974981473,
+      "generalized_roc": 0.500088249357184
+    },
+    "forecast_dir": "forecasts/ethiopia/JAS/2026-05"
+  },
+  {
+    "kind": "operational",
+    "date": "2026-05-22",
+    "commit": "9d79eebafb63e5ee6d2ed9fa8041e130b04978b0",
+    "country": "ethiopia",
+    "season": "ASO",
+    "init": "2026-05",
+    "status": "ok",
+    "metrics": {
+      "pearson_r": 0.11018982821724953,
+      "root_mean_squared_error": 0.8449537243821545,
+      "spearman": 0.11344137678886726,
+      "2afc": 0.5408369844911992,
+      "rpss": -0.035095577456665916,
+      "roc_bn": 0.5064020800962298,
+      "roc_nn": 0.5007782159515859,
+      "roc_an": 0.5111448521244472,
+      "roc_area_below_normal": 0.5064020800962298,
+      "roc_area_above_normal": 0.5111448521244472,
+      "reliability": 0.014235102214120223,
+      "generalized_roc": 0.5561874714142127
+    },
+    "forecast_dir": "forecasts/ethiopia/ASO/2026-05"
   }
 ]
