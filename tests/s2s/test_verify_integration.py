@@ -11,6 +11,8 @@ import pytest
 import xarray as xr
 import yaml
 
+pytestmark = pytest.mark.integration
+
 
 def _fine_grid():
     return np.linspace(-5, 5, 24), np.linspace(33, 42, 36)

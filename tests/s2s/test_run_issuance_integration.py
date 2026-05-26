@@ -9,6 +9,8 @@ import pytest
 import xarray as xr
 import yaml
 
+pytestmark = pytest.mark.integration
+
 
 # ---- Synthetic data builders shared across tests ----
 

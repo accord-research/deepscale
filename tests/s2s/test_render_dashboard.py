@@ -9,6 +9,8 @@ import pytest
 import xarray as xr
 import yaml
 
+pytestmark = pytest.mark.integration
+
 
 def _make_method_ds(seed: int):
     rng = np.random.default_rng(seed)
