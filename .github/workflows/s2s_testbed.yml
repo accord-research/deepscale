@@ -1,0 +1,179 @@
+name: s2s testbed
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: 'How many days back to scan for missed issuances'
+        required: false
+        default: '14'
+
+permissions:
+  contents: write   # We push to the issuance-store branch.
+
+env:
+  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  COUNTRIES: '["kenya","ethiopia","nigeria"]'
+
+jobs:
+
+  detect_issuances:
+    name: detect new issuances per country
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.build.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: issuance-store
+          path: issuance-store-checkout
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install deepscale (no extras)
+        run: uv sync
+
+      - name: Build (country, issuance) matrix
+        id: build
+        run: |
+          set -euo pipefail
+          LOOKBACK=${{ github.event.inputs.lookback_days || '14' }}
+          MATRIX='[]'
+          for COUNTRY in $(echo "$COUNTRIES" | jq -r '.[]'); do
+            ISSUANCES=$(uv run python -m scripts.s2s.detect_new_issuances \
+              --store-root issuance-store-checkout \
+              --country "$COUNTRY" \
+              --lookback-days "$LOOKBACK")
+            MATRIX=$(jq --argjson m "$MATRIX" --arg c "$COUNTRY" --argjson is "$ISSUANCES" \
+              -n '$m + [$is[] | {country: $c, issuance: .}]')
+          done
+          echo "matrix=$(echo "$MATRIX" | jq -c '{include: .}')" >> "$GITHUB_OUTPUT"
+
+  forecast:
+    name: forecast (${{ matrix.country }} @ ${{ matrix.issuance }})
+    needs: detect_issuances
+    if: ${{ needs.detect_issuances.outputs.matrix != '{"include":[]}' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.detect_issuances.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: issuance-store
+          path: issuance-store-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: accord-research/rosetta
+          path: rosetta
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install deepscale + rosetta
+        run: |
+          uv sync
+          uv pip install -e ./rosetta
+
+      - name: Write .cdsapirc
+        run: |
+          umask 077
+          cat > ~/.cdsapirc <<EOF
+          url: https://ecds.ecmwf.int/api
+          key: ${CDSAPI_KEY}
+          EOF
+
+      - name: Run issuance
+        env:
+          S2S_STORE_ROOT: issuance-store-checkout/issuances
+        run: |
+          uv run python -m scripts.s2s.run_issuance \
+            --country "${{ matrix.country }}" \
+            --issuance "${{ matrix.issuance }}" \
+            --config scripts/s2s/s2s.yml
+
+      - name: Commit + push new issuance to issuance-store
+        working-directory: issuance-store-checkout
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add issuances/
+          if git diff --cached --quiet; then
+            echo "Nothing to commit for ${{ matrix.country }} @ ${{ matrix.issuance }}"
+            exit 0
+          fi
+          git commit -m "forecast: ${{ matrix.country }} @ ${{ matrix.issuance }}"
+          # Retry-pull-rebase to absorb concurrent matrix shards.
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin issuance-store && git push origin issuance-store && exit 0
+            sleep $((attempt * 5))
+          done
+          echo "Push failed after 5 attempts" >&2
+          exit 1
+
+  verify:
+    name: verification pass
+    needs: forecast
+    if: ${{ always() }}   # Run even if some forecast shards failed; verify is independent.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: issuance-store
+          path: issuance-store-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: accord-research/rosetta
+          path: rosetta
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install deepscale + rosetta
+        run: |
+          uv sync
+          uv pip install -e ./rosetta
+
+      - name: Write .cdsapirc
+        run: |
+          umask 077
+          cat > ~/.cdsapirc <<EOF
+          url: https://ecds.ecmwf.int/api
+          key: ${CDSAPI_KEY}
+          EOF
+
+      - name: Run verification
+        run: |
+          uv run python -m scripts.s2s.verify \
+            --store-root issuance-store-checkout/issuances \
+            --verification-root issuance-store-checkout/verification \
+            --config scripts/s2s/s2s.yml
+
+      - name: Commit + push verification updates
+        working-directory: issuance-store-checkout
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add verification/
+          if git diff --cached --quiet; then
+            echo "No new scores to commit"
+            exit 0
+          fi
+          git commit -m "verify: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin issuance-store && git push origin issuance-store && exit 0
+            sleep $((attempt * 5))
+          done
+          exit 1

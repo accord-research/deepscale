@@ -1,0 +1,98 @@
+"""End-to-end integration test for scripts.s2s.render_dashboard."""
+
+import json
+from datetime import date
+from pathlib import Path
+
+import numpy as np
+import pytest
+import xarray as xr
+import yaml
+
+
+def _make_method_ds(seed: int):
+    rng = np.random.default_rng(seed)
+    lat = np.linspace(-5, 5, 24)
+    lon = np.linspace(33, 42, 36)
+    return xr.Dataset(
+        {"mean": (("lat", "lon"), rng.gamma(2, 1.5, (24, 36)).astype("float32"))},
+        coords={"lat": lat, "lon": lon},
+    )
+
+
+def _seed_store(store_root: Path, country: str, issuance: date, targets: list[date]):
+    from scripts.s2s.issuance_store import write_issuance
+    seed = 0
+    for method in ["raw", "climatology", "bcsd"]:
+        for tgt in targets:
+            write_issuance(store_root, country, issuance, method, tgt, _make_method_ds(seed))
+            seed += 1
+
+
+def _seed_verification(verif_root: Path, country: str, records: list[dict]):
+    p = verif_root / country / "scores.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(json.dumps(r) for r in records) + "\n")
+
+
+@pytest.fixture
+def cfg_path(tmp_path):
+    cfg_dict = {
+        "countries": {
+            "kenya": {
+                "bbox": {"min_lat": -5.0, "max_lat": 5.0, "min_lon": 33.0, "max_lon": 42.0},
+                "methods": ["raw", "climatology", "bcsd"],
+                "obs": "obs/chirps-dekadal",
+                "forecast": "c3s/ecmwf-s2s",
+                "variable": "precip",
+            },
+        },
+        "lead_days": {"min": 0, "max": 46},
+        "climatology_years": [1991, 2020],
+        "store_root": str(tmp_path / "issuances"),
+    }
+    p = tmp_path / "s2s.yml"
+    p.write_text(yaml.safe_dump(cfg_dict))
+    return p
+
+
+def test_render_dashboard_produces_pngs(cfg_path, tmp_path):
+    from scripts.s2s.render_dashboard import render_dashboard
+    store = tmp_path / "issuances"
+    verif = tmp_path / "verification"
+    dashboard = tmp_path / "dashboard"
+
+    issuance = date(2026, 5, 15)
+    targets = [date(2026, 5, 21), date(2026, 6, 1)]
+    _seed_store(store, "kenya", issuance, targets)
+    _seed_verification(verif, "kenya", [
+        {"country": "kenya", "issuance": "2026-05-15", "method": "raw",
+         "target_dekad": "2026-05-21", "acc": 0.1, "rmse": 1.0, "bias": 0.0, "rpss": 0.0},
+        {"country": "kenya", "issuance": "2026-05-15", "method": "bcsd",
+         "target_dekad": "2026-05-21", "acc": 0.3, "rmse": 0.8, "bias": -0.1, "rpss": 0.05},
+    ])
+
+    render_dashboard(store_root=store, verification_root=verif, dashboard_root=dashboard, config_path=cfg_path)
+
+    # Comparison grid per (country, issuance)
+    assert (dashboard / "kenya" / "2026-05-15" / "comparison.png").exists()
+    # Metrics panel per country
+    assert (dashboard / "kenya" / "metrics.png").exists()
+    # Top-level index
+    assert (dashboard / "index.html").exists()
+    html = (dashboard / "index.html").read_text()
+    assert "kenya" in html
+    assert "2026-05-15" in html
+
+
+def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
+    """Empty store → index.html still produced, no crash."""
+    from scripts.s2s.render_dashboard import render_dashboard
+    dashboard = tmp_path / "dashboard"
+    render_dashboard(
+        store_root=tmp_path / "empty_store",
+        verification_root=tmp_path / "empty_verif",
+        dashboard_root=dashboard,
+        config_path=cfg_path,
+    )
+    assert (dashboard / "index.html").exists()
