@@ -15,6 +15,8 @@ permissions:
 
 env:
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  MARS_API_KEY: ${{ secrets.MARS_API_KEY }}
+  MARS_API_EMAIL: ${{ secrets.MARS_API_EMAIL }}
   COUNTRIES: '["kenya","ethiopia","nigeria"]'
 
 jobs:
@@ -91,6 +93,17 @@ jobs:
           key: ${CDSAPI_KEY}
           EOF
 
+      - name: Write .ecmwfapirc
+        run: |
+          umask 077
+          cat > ~/.ecmwfapirc <<EOF
+          {
+            "url": "https://api.ecmwf.int/v1",
+            "key": "${MARS_API_KEY}",
+            "email": "${MARS_API_EMAIL}"
+          }
+          EOF
+
       - name: Run issuance
         env:
           S2S_STORE_ROOT: issuance-store-checkout/issuances
@@ -151,6 +164,17 @@ jobs:
           cat > ~/.cdsapirc <<EOF
           url: https://ecds.ecmwf.int/api
           key: ${CDSAPI_KEY}
+          EOF
+
+      - name: Write .ecmwfapirc
+        run: |
+          umask 077
+          cat > ~/.ecmwfapirc <<EOF
+          {
+            "url": "https://api.ecmwf.int/v1",
+            "key": "${MARS_API_KEY}",
+            "email": "${MARS_API_EMAIL}"
+          }
           EOF
 
       - name: Run verification
