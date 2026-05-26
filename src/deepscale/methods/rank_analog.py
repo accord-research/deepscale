@@ -64,9 +64,15 @@ class RankAnalogMethod(MethodBase):
         self.n_years_ = int(hindcast_mean.sizes["year"])
 
         if self.upscale_factor is None:
+            # Ceiling, not round: the upscaled rank field gets cropped to
+            # the obs grid, so we need the upscale to AT LEAST cover the obs
+            # extent. round() can produce a factor that's one short for
+            # non-integer ratios (e.g. obs=43 / hindcast=7 = 6.14 → round=6,
+            # but 7×6=42 < 43; ceil=7 → 7×7=49 → crop to 43).
+            import math
             self.upscale_factor_ = max(
-                round(len(obs.lat) / len(hindcast.lat)),
-                round(len(obs.lon) / len(hindcast.lon)),
+                math.ceil(len(obs.lat) / len(hindcast.lat)),
+                math.ceil(len(obs.lon) / len(hindcast.lon)),
                 1,
             )
         else:

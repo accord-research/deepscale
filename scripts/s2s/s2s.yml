@@ -1,0 +1,41 @@
+# S2S downscaling testbed configuration.
+# Add a country: copy a block, set bbox, pick methods from the registered list.
+# Add a method to an existing country: append to `methods:` and ensure the
+# method is registered in src/deepscale/methods/.
+#
+# Valid methods (as of 2026-05-21): raw, climatology, bcsd, cca, rank-analog.
+# Valid obs products (rosetta): obs/chirps-dekadal.
+# Valid forecast products (rosetta): c3s/ecmwf-s2s.
+
+lead_days:
+  min: 0
+  max: 46
+
+climatology_years: [1991, 2020]
+
+store_root: issuances
+
+countries:
+  kenya:
+    bbox: { min_lat: -5.0, max_lat: 5.5, min_lon: 33.5, max_lon: 42.0 }
+    methods: [raw, climatology, bcsd, cca, rank-analog]
+    obs: obs/chirps-dekadal
+    obs_live: obs/chirps-live   # ~8-day lag, used for recent obs in verify
+    forecast: c3s/ecmwf-s2s
+    variable: precip
+
+  ethiopia:
+    bbox: { min_lat: 3.0, max_lat: 15.0, min_lon: 32.5, max_lon: 48.0 }
+    methods: [raw, climatology, bcsd, cca, rank-analog]
+    obs: obs/chirps-dekadal
+    obs_live: obs/chirps-live   # ~8-day lag, used for recent obs in verify
+    forecast: c3s/ecmwf-s2s
+    variable: precip
+
+  nigeria:
+    bbox: { min_lat: 4.0, max_lat: 14.0, min_lon: 2.5, max_lon: 15.0 }
+    methods: [raw, climatology, bcsd, cca, rank-analog]
+    obs: obs/chirps-dekadal
+    obs_live: obs/chirps-live   # ~8-day lag, used for recent obs in verify
+    forecast: c3s/ecmwf-s2s
+    variable: precip
