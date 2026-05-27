@@ -63,7 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 3
+      # Strict serialization: ECMWF MARS allows only 1 queued S2S request per
+      # user (ERROR 102 USER_QUEUED_LIMIT_EXCEEDED). Each shard's MARS
+      # reforecast must complete before the next shard begins.
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.detect_issuances.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
@@ -84,6 +87,28 @@ jobs:
         run: |
           uv sync
           uv pip install -e ./rosetta
+
+      - name: Configure nuthatch cache location
+        run: |
+          mkdir -p ~/.cache/nuthatch
+          cat > ~/.nuthatch.toml <<EOF
+          [tool.nuthatch]
+          filesystem = "~/.cache/nuthatch"
+          skipped_filesystems = ["gs://sheerwater-datalake/caches"]
+          EOF
+
+      - name: Restore nuthatch cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nuthatch
+          # Per-(country, issuance) cache keyed on the rosetta files whose
+          # contents define cache semantics (catalog units, normalization
+          # logic, _CACHE_VERSION). When those change, the cache invalidates.
+          key: nuthatch-${{ matrix.country }}-${{ matrix.issuance }}-${{ hashFiles('rosetta/src/rosetta/catalog.yaml', 'rosetta/src/rosetta/normalize.py', 'rosetta/src/rosetta/fetch.py') }}
+          restore-keys: |
+            nuthatch-${{ matrix.country }}-${{ matrix.issuance }}-
+            nuthatch-${{ matrix.country }}-
+            nuthatch-
 
       - name: Write .cdsapirc
         run: |
@@ -157,6 +182,27 @@ jobs:
         run: |
           uv sync
           uv pip install -e ./rosetta
+
+      - name: Configure nuthatch cache location
+        run: |
+          mkdir -p ~/.cache/nuthatch
+          cat > ~/.nuthatch.toml <<EOF
+          [tool.nuthatch]
+          filesystem = "~/.cache/nuthatch"
+          skipped_filesystems = ["gs://sheerwater-datalake/caches"]
+          EOF
+
+      - name: Restore nuthatch cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nuthatch
+          # Verify is a single job that needs obs for every country, so use one
+          # shared verify-scoped cache. Restores from the forecast shards' caches
+          # too (they fetched the same CHIRPS dates) via the `nuthatch-` prefix.
+          key: nuthatch-verify-${{ github.run_id }}-${{ hashFiles('rosetta/src/rosetta/catalog.yaml', 'rosetta/src/rosetta/normalize.py', 'rosetta/src/rosetta/fetch.py') }}
+          restore-keys: |
+            nuthatch-verify-
+            nuthatch-
 
       - name: Write .cdsapirc
         run: |
