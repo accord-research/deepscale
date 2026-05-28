@@ -170,6 +170,79 @@ def test_run_issuance_raw_carries_tercile_probs(s2s_config_path, tmp_path):
     assert set(ds.data_vars) == {"mean", "tercile_probs"}
 
 
+def test_run_issuance_degrades_gracefully_on_missing_reforecast(s2s_config_path, tmp_path):
+    """When the reforecast suite isn't published yet (MarsNoDataError from
+    ECDS), the shard should still produce raw + climatology and skip the
+    methods that need reforecast training (bcsd, cca, rank-analog)."""
+    from scripts.s2s.run_issuance import run_issuance
+    issuance = date(2026, 5, 15)
+
+    def _fetch_without_reforecast(*args, **kwargs):
+        if kwargs.get("reforecast"):
+            # Mirrors the exception bubbled up by cdsapi from ECDS.
+            raise RuntimeError(
+                "400 Client Error: Bad Request. The job failed with: "
+                "MarsNoDataError. MARS returned no data, please check your selection."
+            )
+        return _patched_fetch(*args, **kwargs)
+
+    with patch("scripts.s2s.run_issuance.rosetta_fetch",
+               side_effect=_fetch_without_reforecast):
+        run_issuance(country="kenya", issuance=issuance, config_path=s2s_config_path)
+
+    store = tmp_path / "issuances" / "kenya" / issuance.isoformat()
+    methods_dirs = sorted(p.name for p in store.iterdir())
+    # Only the reforecast-independent methods are written.
+    assert methods_dirs == ["climatology", "raw"]
+    # Each still gets a file per target dekad (5 dekads for lead 0–46).
+    for m in methods_dirs:
+        assert len(list((store / m).glob("dekad_*.nc"))) == 5
+
+
+def test_run_issuance_skips_shard_when_realtime_forecast_embargoed(
+    s2s_config_path, tmp_path
+):
+    """ECDS embargoes very recent S2S forecasts with 'Restricted access to
+    S2S data'. With no realtime forecast there's nothing to produce, so
+    the shard should exit cleanly without writing anything."""
+    from scripts.s2s.run_issuance import run_issuance
+    issuance = date(2026, 5, 15)
+
+    def _fetch_with_embargo(*args, **kwargs):
+        # First (forecast) call hits the embargo; reforecast call shouldn't
+        # even be reached.
+        raise RuntimeError(
+            "400 Client Error: Bad Request. MarsRuntimeError: AccessError: "
+            "Restricted access to S2S data."
+        )
+
+    with patch("scripts.s2s.run_issuance.rosetta_fetch",
+               side_effect=_fetch_with_embargo):
+        # Should not raise — graceful exit.
+        run_issuance(country="kenya", issuance=issuance, config_path=s2s_config_path)
+
+    # Nothing written for this issuance.
+    assert not (tmp_path / "issuances" / "kenya" / issuance.isoformat()).exists()
+
+
+def test_run_issuance_reraises_unexpected_reforecast_errors(s2s_config_path, tmp_path):
+    """Errors during reforecast fetch that aren't 'no data published' should
+    propagate — we don't want to silently swallow auth failures, network
+    timeouts, or other genuine bugs."""
+    from scripts.s2s.run_issuance import run_issuance
+    issuance = date(2026, 5, 15)
+
+    def _fetch_with_real_error(*args, **kwargs):
+        if kwargs.get("reforecast"):
+            raise RuntimeError("401 Unauthorized: invalid API key")
+        return _patched_fetch(*args, **kwargs)
+
+    with patch("scripts.s2s.run_issuance.rosetta_fetch",
+               side_effect=_fetch_with_real_error):
+        with pytest.raises(RuntimeError, match="401 Unauthorized"):
+            run_issuance(country="kenya", issuance=issuance, config_path=s2s_config_path)
+
+
 def test_run_issuance_outputs_on_obs_grid_with_no_nans(s2s_config_path, tmp_path):
     from scripts.s2s.run_issuance import run_issuance
     issuance = date(2026, 5, 15)

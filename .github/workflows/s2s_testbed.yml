@@ -63,10 +63,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # Strict serialization: ECMWF MARS allows only 1 queued S2S request per
-      # user (ERROR 102 USER_QUEUED_LIMIT_EXCEEDED). Each shard's MARS
-      # reforecast must complete before the next shard begins.
-      max-parallel: 1
+      # ECDS allows multiple concurrent requests per user (the legacy MARS
+      # WEB-API's 1-queued-per-user limit is gone now that we're off it).
+      # Three parallel shards keeps total cron wall-clock down without
+      # hammering ECDS or running out of GitHub-hosted runner concurrency.
+      max-parallel: 3
       matrix: ${{ fromJSON(needs.detect_issuances.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
@@ -242,6 +243,85 @@ jobs:
             exit 0
           fi
           git commit -m "verify: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin issuance-store && git push origin issuance-store && exit 0
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+  dashboard:
+    name: render dashboard
+    needs: verify
+    if: ${{ always() }}   # Render whatever data made it through.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: issuance-store
+          path: issuance-store-checkout
+      - uses: actions/checkout@v4
+        with:
+          repository: accord-research/rosetta
+          path: rosetta
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install deepscale + rosetta
+        run: |
+          uv sync
+          uv pip install -e ./rosetta
+
+      - name: Configure nuthatch cache location
+        run: |
+          mkdir -p ~/.cache/nuthatch
+          cat > ~/.nuthatch.toml <<EOF
+          [tool.nuthatch]
+          filesystem = "~/.cache/nuthatch"
+          skipped_filesystems = ["gs://sheerwater-datalake/caches"]
+          EOF
+
+      - name: Restore nuthatch cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nuthatch
+          # Share with the verify job's cache — render_dashboard fetches
+          # the same CHIRPS climatology for the comparison-grid obs panel.
+          key: nuthatch-dashboard-${{ github.run_id }}-${{ hashFiles('rosetta/src/rosetta/catalog.yaml', 'rosetta/src/rosetta/normalize.py', 'rosetta/src/rosetta/fetch.py') }}
+          restore-keys: |
+            nuthatch-verify-
+            nuthatch-
+
+      - name: Write .cdsapirc
+        run: |
+          umask 077
+          cat > ~/.cdsapirc <<EOF
+          url: https://ecds.ecmwf.int/api
+          key: ${CDSAPI_KEY}
+          EOF
+
+      - name: Render dashboard
+        run: |
+          uv run python -m scripts.s2s.render_dashboard \
+            --store-root issuance-store-checkout/issuances \
+            --verification-root issuance-store-checkout/verification \
+            --dashboard-root issuance-store-checkout/dashboard \
+            --config scripts/s2s/s2s.yml
+
+      - name: Commit + push dashboard updates
+        working-directory: issuance-store-checkout
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dashboard/
+          if git diff --cached --quiet; then
+            echo "No dashboard changes to commit"
+            exit 0
+          fi
+          git commit -m "dashboard: $(date -u +%Y-%m-%dT%H:%MZ)"
           for attempt in 1 2 3 4 5; do
             git pull --rebase origin issuance-store && git push origin issuance-store && exit 0
             sleep $((attempt * 5))
