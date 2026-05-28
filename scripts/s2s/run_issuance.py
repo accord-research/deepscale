@@ -43,6 +43,24 @@ def rosetta_fetch(product, **kwargs):
     return rosetta.fetch(product=product, **kwargs)
 
 
+# Substrings that identify recoverable "upstream doesn't have the data we
+# asked for" failures from ECDS. They cover the two distinct paths we hit
+# in practice: the on-the-fly reforecast not yet generated for some
+# issuance, and the realtime S2S forecast being under embargo for very
+# recent dates. Everything else (auth, network, code bugs) propagates.
+_NO_DATA_SIGNATURES = (
+    "MarsNoDataError",
+    "MARS returned no data",
+    "Restricted access to S2S data",
+    "AccessError",
+)
+
+
+def _is_upstream_no_data(exc: BaseException) -> bool:
+    msg = str(exc)
+    return any(sig in msg for sig in _NO_DATA_SIGNATURES)
+
+
 def _aggregate_to_dekad(da: xr.DataArray, issuance: date, target_start: date) -> xr.DataArray:
     """Mean of `da` over the lead-time hours that fall in [target_start, target_end).
 
@@ -127,10 +145,40 @@ def run_issuance(*, country: str, issuance: date, config_path: Path | str) -> No
     cc = cfg.countries[country]
 
     region = _bbox_to_region(cc.bbox)
-    fcst = rosetta_fetch(product=cc.forecast, init=issuance.isoformat(),
-                         variable=cc.variable, region=region)[cc.variable]
-    refc = rosetta_fetch(product=cc.forecast, init=issuance.isoformat(),
-                         variable=cc.variable, region=region, reforecast=True)[cc.variable]
+    # ECMWF embargoes very recent S2S forecasts (returns "Restricted access
+    # to S2S data" via MarsRuntimeError until the embargo lifts, typically
+    # a few days after issuance). When the realtime forecast itself isn't
+    # available, there's nothing this shard can produce — exit cleanly
+    # rather than crash the workflow.
+    try:
+        fcst = rosetta_fetch(product=cc.forecast, init=issuance.isoformat(),
+                             variable=cc.variable, region=region)[cc.variable]
+    except Exception as e:  # noqa: BLE001 — narrow on the message below
+        if _is_upstream_no_data(e):
+            print(f"[run_issuance] realtime forecast for {issuance.isoformat()} "
+                  f"is not yet available from ECDS ({type(e).__name__}); "
+                  f"skipping this shard.")
+            return
+        raise
+
+    # The on-the-fly reforecast suite isn't always published in lockstep
+    # with the realtime forecast — issuances in the gap between a model
+    # cycle changeover, or within ~24h of "now", can have a working
+    # realtime forecast but no matching reforecast. Degrade gracefully:
+    # skip the methods that need reforecast training (bcsd/cca/rank-analog)
+    # but still produce raw + climatology for this issuance.
+    try:
+        refc = rosetta_fetch(product=cc.forecast, init=issuance.isoformat(),
+                             variable=cc.variable, region=region,
+                             reforecast=True)[cc.variable]
+    except Exception as e:  # noqa: BLE001
+        if _is_upstream_no_data(e):
+            print(f"[run_issuance] no reforecast suite published for "
+                  f"{issuance.isoformat()}; degrading to raw + climatology "
+                  f"(skipping bcsd/cca/rank-analog).")
+            refc = None
+        else:
+            raise
     # Pass the climatology window explicitly so sheerwater doesn't default
     # to "last year + this year" — which extends into the future and breaks
     # its internal rolling aggregation on empty time chunks.
@@ -146,7 +194,10 @@ def run_issuance(*, country: str, issuance: date, config_path: Path | str) -> No
     for target in targets:
         # Forecast and reforecast aggregated to this dekad.
         fcst_dekad = _aggregate_to_dekad(fcst, issuance, target)
-        refc_dekad = _aggregate_to_dekad(refc, issuance, target)  # (year, member, lat, lon)
+        refc_dekad = (
+            _aggregate_to_dekad(refc, issuance, target)
+            if refc is not None else None
+        )  # (year, member, lat, lon) or None when reforecast wasn't available
         obs_dekad = _obs_climatology_for_dekad(obs_full, target, cfg.climatology_years)
 
         for method_name in cc.methods:
@@ -166,10 +217,14 @@ def run_issuance(*, country: str, issuance: date, config_path: Path | str) -> No
                 continue
 
             # All other methods go through deepscale.downscale with
-            # hindcast=reforecast. BCSD/CCA/rank-analog require obs and
-            # reforecast to share a year axis — slice both to the
-            # intersection of the reforecast's year range and the obs
-            # years available at this dekad.
+            # hindcast=reforecast. BCSD/CCA/rank-analog need the reforecast
+            # for training; skip them when it wasn't available.
+            if refc_dekad is None:
+                continue
+
+            # BCSD/CCA/rank-analog require obs and reforecast to share a
+            # year axis — slice both to the intersection of the reforecast's
+            # year range and the obs years available at this dekad.
             common_years = sorted(
                 set(refc_dekad.year.values.tolist())
                 & set(obs_dekad.year.values.tolist())

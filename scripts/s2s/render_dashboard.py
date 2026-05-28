@@ -136,17 +136,36 @@ def render_dashboard(
                 )[cc.variable].load()
             except Exception as e:  # noqa: BLE001 — render is best-effort
                 print(f"[render] obs fetch failed for {country}: {e}")
+            # The live feed is only useful for target dekads inside the
+            # ~3-month window where CHIRPS dekadal hasn't finalized yet.
+            # For older issuances we'd otherwise iterate `chirps_raw_live`
+            # over thousands of pre-window dates that all return "no data
+            # available" — wasted minutes per country and a real risk of
+            # hanging the workflow once the issuance store accumulates
+            # historical entries. Only fetch live obs when at least one
+            # comparison target falls inside the live-feed window.
             if cc.obs_live:
-                from datetime import date as _date
-                try:
-                    obs_live = rosetta_fetch(
-                        product=cc.obs_live,
-                        variable=cc.variable,
-                        region=_bbox_to_region(cc.bbox),
-                        hindcast=(min(i.year for i in issuances), _date.today().year),
-                    )[cc.variable].load()
-                except Exception as e:  # noqa: BLE001 — live obs is optional
-                    print(f"[render] live obs unavailable for {country}: {e}")
+                from datetime import date as _date, timedelta
+                today = _date.today()
+                live_window_start = today - timedelta(days=90)
+                # render only uses the first/most-recent target per issuance
+                # (`targets[0]`) for the comparison grid, so check those.
+                needs_live = False
+                for iss in issuances:
+                    targets = _list_targets(Path(store_root), country, iss)
+                    if targets and targets[0] >= live_window_start:
+                        needs_live = True
+                        break
+                if needs_live:
+                    try:
+                        obs_live = rosetta_fetch(
+                            product=cc.obs_live,
+                            variable=cc.variable,
+                            region=_bbox_to_region(cc.bbox),
+                            hindcast=(today.year, today.year),
+                        )[cc.variable].load()
+                    except Exception as e:  # noqa: BLE001 — live obs is optional
+                        print(f"[render] live obs unavailable for {country}: {e}")
 
         for issuance in issuances:
             targets = _list_targets(Path(store_root), country, issuance)
