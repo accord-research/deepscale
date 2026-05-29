@@ -11,58 +11,137 @@ from typing import Mapping, Sequence
 import matplotlib
 matplotlib.use("Agg")  # non-interactive backend; required for headless rendering
 import matplotlib.pyplot as plt
+
+# Dark theme matching site/theme.css so rendered PNGs blend into the dark
+# dashboard page (and look right in GitHub's image viewer too). Applied to
+# matplotlib's global rcParams at import — this module is dashboard-only.
+_DARK_BG = "#1a1a1a"      # site/theme.css --bg
+_DARK_FG = "#e5e5e5"      # --text
+_DARK_MUTED = "#9ca3af"   # --muted
+_DARK_BORDER = "#2a2a2a"  # --border
+
+_DARK_RC = {
+    "figure.facecolor": _DARK_BG,
+    "figure.edgecolor": _DARK_BG,
+    "savefig.facecolor": _DARK_BG,
+    "savefig.edgecolor": _DARK_BG,
+    "axes.facecolor": _DARK_BG,
+    "axes.edgecolor": _DARK_BORDER,
+    "axes.labelcolor": _DARK_FG,
+    "axes.titlecolor": _DARK_FG,
+    "text.color": _DARK_FG,
+    "xtick.color": _DARK_MUTED,
+    "ytick.color": _DARK_MUTED,
+    "xtick.labelcolor": _DARK_FG,
+    "ytick.labelcolor": _DARK_FG,
+    "grid.color": _DARK_BORDER,
+    "legend.facecolor": _DARK_BG,
+    "legend.edgecolor": _DARK_BORDER,
+    "legend.labelcolor": _DARK_FG,
+}
+
+
+def apply_dark_theme() -> None:
+    """Apply the dashboard dark palette (see site/theme.css) to matplotlib globally."""
+    plt.rcParams.update(_DARK_RC)
+
+
+apply_dark_theme()
+
 import numpy as np
 import xarray as xr
 
 
+_AMOUNT_CMAP = "YlGnBu"  # sequential precip: light = dry, blue-green = wet
+_DIFF_CMAP = "BrBG"      # diverging anomaly: brown = drier, teal = wetter (centered on 0)
+
+
 def comparison_grid(
-    panels: Mapping[str, xr.Dataset],
+    obs: xr.Dataset | None,
+    methods: Mapping[str, xr.Dataset],
     *,
     dekad_label: str,
-    cmap: str = "viridis",
-    vmin: float | None = None,
-    vmax: float | None = None,
 ) -> plt.Figure:
-    """Render a single-row grid of pcolormesh maps, one per method/obs panel.
+    """Per-method spatial comparison.
 
-    panels: dict mapping panel label → xr.Dataset with a 'mean' variable on (lat, lon).
-    dekad_label: shown as the figure suptitle.
+    ``methods``: ordered mapping {method_name: Dataset with a 'mean' var on (lat, lon)}.
+    ``obs``: Dataset with 'mean', or None when the observation for this dekad isn't
+    archived yet. With obs, each method gets a row of
+    ``observed | forecast | (forecast - obs)`` — sequential amounts (shared scale)
+    plus a diverging difference panel centered on zero. Without obs, only the
+    forecast column is drawn (the difference appears once obs lands).
     """
-    n = len(panels)
-    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 3.5), constrained_layout=True)
-    if n == 1:
-        axes = [axes]
+    names = list(methods)
+    n = len(names)
+    has_obs = obs is not None
+    ncols = 3 if has_obs else 1
+    fig, axes = plt.subplots(
+        n, ncols, figsize=(3.4 * ncols, 3.0 * n), constrained_layout=True, squeeze=False
+    )
 
-    # Shared color scale: derive from the union of panel means if not given.
-    if vmin is None or vmax is None:
-        all_vals = np.concatenate([ds["mean"].values.ravel() for ds in panels.values()])
-        finite = all_vals[np.isfinite(all_vals)]
-        if finite.size:
-            if vmin is None:
-                vmin = float(np.percentile(finite, 2))
-            if vmax is None:
-                vmax = float(np.percentile(finite, 98))
+    # Shared amounts scale across obs + every forecast.
+    amount_fields = [methods[k]["mean"].values for k in names]
+    if has_obs:
+        amount_fields.append(obs["mean"].values)
+    finite = np.concatenate([f.ravel() for f in amount_fields])
+    finite = finite[np.isfinite(finite)]
+    amax = float(np.percentile(finite, 98)) if finite.size else 1.0
 
-    mesh = None
-    for ax, (label, ds) in zip(axes, panels.items()):
-        ax.set_title(label)
-        mean = ds["mean"]
-        mesh = ax.pcolormesh(
-            mean["lon"], mean["lat"], mean.values,
-            cmap=cmap, vmin=vmin, vmax=vmax, shading="auto",
+    # Shared symmetric difference scale (centered on zero).
+    dmax = 1.0
+    if has_obs:
+        obs_vals = obs["mean"].values
+        diff_all = np.concatenate(
+            [(methods[k]["mean"].values - obs_vals).ravel() for k in names]
         )
-        ax.set_xlabel("lon")
-        ax.set_ylabel("lat")
+        diff_all = diff_all[np.isfinite(diff_all)]
+        if diff_all.size:
+            dmax = float(np.percentile(np.abs(diff_all), 98)) or 1.0
 
-    fig.suptitle(f"Comparison grid — {dekad_label}")
+    amesh = dmesh = None
+    for i, name in enumerate(names):
+        fc = methods[name]["mean"]
+        if has_obs:
+            ob = obs["mean"]
+            amesh = axes[i, 0].pcolormesh(
+                ob["lon"], ob["lat"], ob.values,
+                cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
+            )
+            axes[i, 1].pcolormesh(
+                fc["lon"], fc["lat"], fc.values,
+                cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
+            )
+            dmesh = axes[i, 2].pcolormesh(
+                fc["lon"], fc["lat"], fc.values - ob.values,
+                cmap=_DIFF_CMAP, vmin=-dmax, vmax=dmax, shading="auto",
+            )
+            if i == 0:
+                axes[i, 0].set_title("observed (CHIRPS)", fontsize=10)
+                axes[i, 1].set_title("forecast", fontsize=10)
+                axes[i, 2].set_title("difference (fcst − obs)", fontsize=10)
+        else:
+            amesh = axes[i, 0].pcolormesh(
+                fc["lon"], fc["lat"], fc.values,
+                cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
+            )
+            if i == 0:
+                axes[i, 0].set_title("forecast (obs pending)", fontsize=10)
+        axes[i, 0].set_ylabel(name, fontsize=11, fontweight="bold")
+        for j in range(ncols):
+            axes[i, j].set_xticks([])
+            axes[i, j].set_yticks([])
 
-    # Place the colorbar as an inset of the last data panel; inset_axes children
-    # are NOT added to fig.axes, so len(fig.axes) stays equal to n — the test
-    # asserts len(fig.axes) == len(panels).
-    if mesh is not None:
-        cax = axes[-1].inset_axes([1.04, 0.0, 0.07, 1.0])
-        fig.colorbar(mesh, cax=cax, label="precip (mm/day)")
+    allax = axes.ravel().tolist()
+    if has_obs:
+        fig.colorbar(amesh, ax=allax, location="right", shrink=0.38, anchor=(0.0, 0.80),
+                     label="precip (mm/day)")
+        fig.colorbar(dmesh, ax=allax, location="right", shrink=0.38, anchor=(0.0, 0.18),
+                     label="Δ mm/day  brown=drier · teal=wetter")
+    else:
+        fig.colorbar(amesh, ax=allax, location="right", shrink=0.6,
+                     label="precip (mm/day)")
 
+    fig.suptitle(f"Comparison by method — {dekad_label}", fontsize=13)
     return fig
 
 
@@ -114,10 +193,17 @@ def metrics_panel(
             ax.axhline(0, color="#888", linewidth=0.8, linestyle="--", zorder=0)
         ax.set_title(f"{title} — {desc}", fontsize=11, fontweight="bold", loc="left")
         ax.set_ylabel(units, fontsize=10)
-        ax.legend(loc="best", fontsize=9, ncols=min(len(by_method), 5))
         ax.tick_params(axis="x", rotation=30, labelsize=9)
         ax.tick_params(axis="y", labelsize=9)
         ax.grid(True, alpha=0.25)
+
+    # One shared legend for the whole figure, placed OUTSIDE the axes (bottom
+    # strip) — every subplot has the same methods, and loc="best" per-axes used
+    # to land the legend on top of the data when lines span the full width.
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="outside lower center",
+                   ncols=min(len(by_method), 5), fontsize=9)
 
     fig.suptitle(f"S2S testbed metrics — {country}", fontsize=13, fontweight="bold")
     return fig

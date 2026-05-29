@@ -249,17 +249,21 @@ jobs:
           done
           exit 1
 
-  dashboard:
-    name: render dashboard
+  publish:
+    name: render + publish dashboard
     needs: verify
-    if: ${{ always() }}   # Render whatever data made it through.
+    if: ${{ always() }}   # Publish whatever data made it through.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4               # main: code + site/ shell
       - uses: actions/checkout@v4
         with:
           ref: issuance-store
-          path: issuance-store-checkout
+          path: issuance-store-checkout         # data: issuances/ + verification/
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages-checkout               # publish target
       - uses: actions/checkout@v4
         with:
           repository: accord-research/rosetta
@@ -287,9 +291,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/nuthatch
-          # Share with the verify job's cache — render_dashboard fetches
-          # the same CHIRPS climatology for the comparison-grid obs panel.
-          key: nuthatch-dashboard-${{ github.run_id }}-${{ hashFiles('rosetta/src/rosetta/catalog.yaml', 'rosetta/src/rosetta/normalize.py', 'rosetta/src/rosetta/fetch.py') }}
+          # Share with the verify job's cache — render fetches the same CHIRPS
+          # climatology for the comparison-grid obs panel.
+          key: nuthatch-publish-${{ github.run_id }}-${{ hashFiles('rosetta/src/rosetta/catalog.yaml', 'rosetta/src/rosetta/normalize.py', 'rosetta/src/rosetta/fetch.py') }}
           restore-keys: |
             nuthatch-verify-
             nuthatch-
@@ -302,28 +306,36 @@ jobs:
           key: ${CDSAPI_KEY}
           EOF
 
-      - name: Render dashboard
+      - name: Render dashboard into a build dir
         run: |
           uv run python -m scripts.s2s.render_dashboard \
             --store-root issuance-store-checkout/issuances \
             --verification-root issuance-store-checkout/verification \
-            --dashboard-root issuance-store-checkout/dashboard \
+            --dashboard-root build/s2s \
             --config scripts/s2s/s2s.yml
 
-      - name: Commit + push dashboard updates
-        working-directory: issuance-store-checkout
+      - name: Assemble gh-pages tree (hub + theme + s2s/)
+        run: |
+          uv run python -m scripts.s2s.publish_pages \
+            --site-src site \
+            --s2s-build build/s2s \
+            --pages-root gh-pages-checkout
+
+      - name: Commit + push gh-pages
+        working-directory: gh-pages-checkout
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add dashboard/
+          git add index.html theme.css
+          [ -d s2s ] && git add -A s2s || true
           if git diff --cached --quiet; then
-            echo "No dashboard changes to commit"
+            echo "No site changes to commit"
             exit 0
           fi
-          git commit -m "dashboard: $(date -u +%Y-%m-%dT%H:%MZ)"
+          git commit -m "pages: $(date -u +%Y-%m-%dT%H:%MZ)"
           for attempt in 1 2 3 4 5; do
-            git pull --rebase origin issuance-store && git push origin issuance-store && exit 0
+            git pull --rebase origin gh-pages && git push origin gh-pages && exit 0
             sleep $((attempt * 5))
           done
           exit 1

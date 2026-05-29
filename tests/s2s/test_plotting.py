@@ -16,19 +16,27 @@ def _make_method_dataset(rng_seed: int = 0):
     return xr.Dataset({"mean": mean})
 
 
-def test_comparison_grid_returns_figure_with_expected_layout():
+def test_comparison_grid_triptych_with_obs():
     from scripts.s2s.plotting import comparison_grid
-    panels = {
+    obs = _make_method_dataset(9)
+    methods = {
         "raw": _make_method_dataset(0),
-        "climatology": _make_method_dataset(1),
-        "bcsd": _make_method_dataset(2),
-        "obs": _make_method_dataset(3),
+        "bcsd": _make_method_dataset(1),
+        "cca": _make_method_dataset(2),
     }
-    fig = comparison_grid(panels, dekad_label="2026-05-21")
-    # One row, N panels.
-    assert len(fig.axes) == len(panels)
-    # Title carries the dekad label.
+    fig = comparison_grid(obs, methods, dekad_label="2026-05-21")
+    # 3 methods x 3 columns (obs | forecast | difference) = 9 data axes (plus colorbars).
+    assert len(fig.axes) >= 3 * len(methods)
     assert "2026-05-21" in (fig._suptitle.get_text() if fig._suptitle else "")
+
+
+def test_comparison_grid_without_obs_shows_forecasts_only():
+    from scripts.s2s.plotting import comparison_grid
+    methods = {"raw": _make_method_dataset(0), "bcsd": _make_method_dataset(1)}
+    fig = comparison_grid(None, methods, dekad_label="2026-05-25")
+    # No obs -> one forecast panel per method (plus a colorbar).
+    assert len(fig.axes) >= len(methods)
+    assert "2026-05-25" in (fig._suptitle.get_text() if fig._suptitle else "")
 
 
 def test_metrics_panel_handles_empty_scores(tmp_path):
