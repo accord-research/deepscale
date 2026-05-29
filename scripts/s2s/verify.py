@@ -42,12 +42,13 @@ def _bbox_to_region(bbox: dict) -> list[float]:
 
 def _obs_at_dekad_rolling(obs_full: xr.DataArray, target: date) -> xr.DataArray | None:
     """Return the (lat, lon) obs for the 10-day window starting at ``target``,
-    when ``obs_full`` came from chirps_v2(agg_days=10) (timestamps where the
-    value at day T is the rolling mean of [T-9, T]; we want T = target + 9).
+    when ``obs_full`` came from chirps_v2(agg_days=10). Sheerwater's
+    ``roll_and_agg`` LEFT-aligns the window (it subtracts ``agg-1`` days after a
+    right-aligned rolling mean), so the value at label T is the mean of
+    [T, T+9] — i.e. the dekad starting at ``target`` is labelled ``target``.
     Returns None if the obs for that timestamp isn't archived yet.
     """
-    ts = target + timedelta(days=9)
-    ts64 = xr_timestamp_for(ts)
+    ts64 = xr_timestamp_for(target)
     if ts64 not in obs_full["time"].values:
         return None
     return obs_full.sel(time=ts64)
@@ -59,11 +60,13 @@ def _obs_at_dekad_daily(obs_full: xr.DataArray, target: date) -> xr.DataArray | 
     no rolling). Computes the mean of [target, target+9] inclusive.
     Returns None if any of those 10 days are missing (window isn't complete yet).
     """
-    import numpy as np
     days = [target + timedelta(days=i) for i in range(10)]
+    # ``datetime64[D].tolist()`` yields datetime.date objects, so membership
+    # must be tested against the date objects in ``days``. (The previous
+    # np.datetime64 scalars never hash-matched the date set → always None,
+    # which silently disabled this fallback entirely.)
     have = set(obs_full["time"].values.astype("datetime64[D]").tolist())
-    needed = [np.datetime64(d.isoformat(), "D") for d in days]
-    if not all(n in have for n in needed):
+    if not all(d in have for d in days):
         return None
     window = obs_full.sel(time=[xr_timestamp_for(d) for d in days])
     return window.mean("time")
@@ -83,8 +86,10 @@ def _obs_climatology_for_dekad(
     """
     y0, y1 = climatology_years
     obs = obs_full.sel(time=slice(f"{y0}-01-01", f"{y1}-12-31"))
-    target_offset_doy = (target + timedelta(days=9)).timetuple().tm_yday
-    mask = obs.time.dt.dayofyear == target_offset_doy
+    # Left-aligned rolling label for the dekad starting at ``target`` is
+    # ``target`` itself (value at T = mean of [T, T+9]); match that day-of-year.
+    target_doy = target.timetuple().tm_yday
+    mask = obs.time.dt.dayofyear == target_doy
     sel = obs.where(mask, drop=True)
     sel = (
         sel.assign_coords(year=("time", sel.time.dt.year.values))
@@ -144,6 +149,11 @@ def verify(
                     variable=cc.variable,
                     region=_bbox_to_region(cc.bbox),
                     hindcast=(live_lo, live_hi),
+                    # The recent-obs window keeps growing day to day; bypass
+                    # rosetta's year-granularity _fetch_raw_cached so we don't
+                    # serve a stale snapshot missing the newest days (the
+                    # restore-keys'd CI cache would otherwise reuse it forever).
+                    cache=False,
                 )[cc.variable].load()
             except Exception as e:  # noqa: BLE001 — live feed is best-effort
                 print(f"[verify] live obs unavailable for {country}: {e}")
@@ -154,6 +164,13 @@ def verify(
             obs_field = _obs_at_dekad_rolling(obs_clim, target)
             if obs_field is None and obs_live is not None:
                 obs_field = _obs_at_dekad_daily(obs_live, target)
+                if obs_field is not None:
+                    # The live daily feed is on its own (finer, unmasked) grid;
+                    # put it on the climatology/forecast grid so the anomaly and
+                    # tercile maths stay apples-to-apples.
+                    obs_field = obs_field.interp(
+                        lat=obs_clim["lat"], lon=obs_clim["lon"], method="nearest",
+                    )
             if obs_field is None:
                 continue
             clim = _obs_climatology_for_dekad(obs_clim, target, cfg.climatology_years)
