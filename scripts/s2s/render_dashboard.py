@@ -45,6 +45,13 @@ def _obs_panel_for_target(
     field = _obs_at_dekad_rolling(obs_clim, target)
     if field is None and obs_live is not None:
         field = _obs_at_dekad_daily(obs_live, target)
+        if field is not None:
+            # Live daily feed is on its own (finer, unmasked) grid; match the
+            # climatology/forecast grid so the comparison triptych lines up
+            # cell-for-cell with the forecast panels.
+            field = field.interp(
+                lat=obs_clim["lat"], lon=obs_clim["lon"], method="nearest",
+            )
     if field is None:
         return None
     return xr.Dataset({"mean": field})
@@ -164,6 +171,9 @@ def render_dashboard(
                             variable=cc.variable,
                             region=_bbox_to_region(cc.bbox),
                             hindcast=(date.today().year, date.today().year),
+                            # Bypass rosetta's year-granularity cache so the
+                            # recent-obs window is always fresh (see verify.py).
+                            cache=False,
                         )[cc.variable].load()
                     except Exception as e:  # noqa: BLE001 — live obs is optional
                         print(f"[render] live obs unavailable for {country}: {e}")

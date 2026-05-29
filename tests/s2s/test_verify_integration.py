@@ -136,3 +136,90 @@ def test_verify_rpss_only_when_tercile_probs_present(s2s_cfg, tmp_path):
     assert "rpss" in by_method["bcsd"]
     assert "rpss" in by_method["raw"]
     assert "rpss" not in by_method["climatology"]
+
+
+def _make_obs_clim_only():
+    """Finalized rolled obs covering ONLY the climatology window (1991-2020).
+
+    The recent (2026) entries are absent — mimicking the stale/empty current-year
+    sheerwater cache that produced zero scores. Forces verify onto the daily feed.
+    """
+    lat, lon = _fine_grid()
+    times = pd.date_range("1991-01-01", "2020-12-31", freq="D")
+    rng = np.random.default_rng(7)
+    data = rng.gamma(2.0, 1.5, size=(len(times), len(lat), len(lon))).astype("float32")
+    return xr.DataArray(
+        data, dims=["time", "lat", "lon"],
+        coords={"time": times, "lat": lat, "lon": lon}, name="precip",
+    )
+
+
+def _make_obs_live_fine():
+    """2026 daily live feed on a FINER grid than the climatology — exercises the
+    regrid-onto-climatology-grid step (a missing regrid would crash score_pair)."""
+    lat = np.linspace(-5, 5, 48)
+    lon = np.linspace(33, 42, 72)
+    times = pd.date_range("2026-01-01", "2026-06-30", freq="D")
+    rng = np.random.default_rng(8)
+    data = rng.gamma(2.0, 1.5, size=(len(times), len(lat), len(lon))).astype("float32")
+    return xr.DataArray(
+        data, dims=["time", "lat", "lon"],
+        coords={"time": times, "lat": lat, "lon": lon}, name="precip",
+    )
+
+
+def _patched_fetch_with_live(*args, **kwargs):
+    product = kwargs.get("product") or (args[0] if args else None)
+    if product == "obs/chirps-dekadal":
+        return _make_obs_clim_only().to_dataset()
+    if product == "obs/chirps-live":
+        return _make_obs_live_fine().to_dataset()
+    raise AssertionError(f"unexpected fetch call: {product=}")
+
+
+@pytest.fixture
+def s2s_cfg_with_live(tmp_path):
+    """Config that, unlike s2s_cfg, declares obs_live so the daily fallback runs."""
+    from scripts.s2s.config import load_config
+    cfg_dict = {
+        "countries": {
+            "kenya": {
+                "bbox": {"min_lat": -5.0, "max_lat": 5.0, "min_lon": 33.0, "max_lon": 42.0},
+                "methods": ["raw", "climatology", "bcsd"],
+                "obs": "obs/chirps-dekadal",
+                "obs_live": "obs/chirps-live",
+                "forecast": "c3s/ecmwf-s2s",
+                "variable": "precip",
+            },
+        },
+        "lead_days": {"min": 0, "max": 46},
+        "climatology_years": [1991, 2020],
+        "store_root": str(tmp_path / "issuances"),
+    }
+    path = tmp_path / "s2s.yml"
+    path.write_text(yaml.safe_dump(cfg_dict))
+    return load_config(path)
+
+
+def test_verify_scores_via_daily_fallback_when_finalized_obs_missing(s2s_cfg_with_live, tmp_path):
+    """The 2026 regression: finalized rolled obs has no entry for the recent
+    target (empty cache), so verify falls back to the daily live feed, regrids it
+    onto the climatology grid, and still writes a full set of scores.
+
+    Pre-fix this wrote ZERO records (dead daily fallback + grid mismatch)."""
+    from scripts.s2s.verify import verify
+    store = tmp_path / "issuances"
+    verif = tmp_path / "verification"
+    issuance = date(2026, 5, 15)
+    target = date(2026, 5, 21)
+    _write_synthetic_store(store, "kenya", issuance, target)
+
+    with patch("scripts.s2s.verify.rosetta_fetch", side_effect=_patched_fetch_with_live):
+        verify(store_root=store, verification_root=verif, cfg=s2s_cfg_with_live)
+
+    records = [json.loads(line) for line in (verif / "kenya" / "scores.jsonl").read_text().splitlines()]
+    methods_seen = sorted({r["method"] for r in records})
+    assert methods_seen == ["bcsd", "climatology", "raw"]
+    # Obs came off a 48x72 grid; without the regrid-onto-clim-grid step
+    # score_pair would have raised on the shape mismatch.
+    assert all("acc" in r and "rmse" in r for r in records)

@@ -104,20 +104,18 @@ def _dekad_of_year(d: date) -> int:
 def _obs_climatology_for_dekad(obs_full: xr.DataArray, target: date, climatology_years: tuple[int, int]) -> xr.DataArray:
     """Slice the obs climatology to the target dekad of year and the climatology window.
 
-    Sheerwater's chirps_v2(agg_days=10) returns daily timestamps where the
-    value at day T is the 10-day rolling mean of days [T-9, T]. For a target
-    dekad starting on date D, the relevant rolling mean ends on D+9. We pick
-    that timestamp from each year in the climatology window and stack the
-    results on a new `year` dimension.
+    Sheerwater's chirps_v2(agg_days=10) LEFT-aligns its 10-day rolling window
+    (roll_and_agg subtracts agg-1 days after a right-aligned mean), so the value
+    at label T is the mean of days [T, T+9]. The dekad starting on date D is
+    therefore labelled D: we pick that day-of-year from each year in the
+    climatology window and stack the results on a new `year` dimension.
 
     Returns (year, lat, lon).
     """
-    from datetime import timedelta
-
     y0, y1 = climatology_years
     obs = obs_full.sel(time=slice(f"{y0}-01-01", f"{y1}-12-31"))
-    target_offset_doy = (target + timedelta(days=9)).timetuple().tm_yday
-    mask = obs.time.dt.dayofyear == target_offset_doy
+    target_doy = target.timetuple().tm_yday
+    mask = obs.time.dt.dayofyear == target_doy
     sel = obs.where(mask, drop=True)
     sel = (
         sel.assign_coords(year=("time", sel.time.dt.year.values))
