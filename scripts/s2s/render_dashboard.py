@@ -17,7 +17,7 @@ import argparse
 import html
 import json
 import sys
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import xarray as xr
@@ -111,22 +111,32 @@ def render_dashboard(
     cfg: S2SConfig = load_config(config_path)
     dashboard_root = Path(dashboard_root)
     dashboard_root.mkdir(parents=True, exist_ok=True)
+    window_days = cfg.comparison_window_days
 
-    index_entries: list[tuple[str, list[tuple[date, Path]]]] = []
+    explorer: dict[str, list[str]] = {}
 
     for country in sorted(cfg.countries):
         cc = cfg.countries[country]
         issuances = _list_issuances(Path(store_root), country)
-        country_entries: list[tuple[date, Path]] = []
 
-        # Fetch CHIRPS once per country, covering the climatology window plus
-        # any issuance years we'll render. Used to label each comparison grid
-        # with the actual observed precip for the same dekad.
+        # Rolling recent window (relative to this country's latest issuance) for the
+        # comparison maps — keeps the page, the render cost, and the gh-pages branch
+        # bounded as the testbed runs for months/years. The skill-over-time metrics
+        # below still use the full history.
+        windowed: list[date] = []
+        if issuances:
+            latest = max(issuances)
+            cutoff = latest - timedelta(days=window_days)
+            windowed = [i for i in issuances if i >= cutoff]
+
+        # Fetch CHIRPS once per country, but only when there are windowed issuances
+        # whose comparison panels we'll actually draw. Used to label each grid with
+        # the observed precip for the same dekad.
         obs_clim = None
         obs_live = None
-        if issuances:
+        if windowed:
             clim_lo, clim_hi = cfg.climatology_years
-            end_year = max(i.year for i in issuances)
+            end_year = max(i.year for i in windowed)
             try:
                 obs_clim = rosetta_fetch(
                     product=cc.obs,
@@ -136,22 +146,13 @@ def render_dashboard(
                 )[cc.variable].load()
             except Exception as e:  # noqa: BLE001 — render is best-effort
                 print(f"[render] obs fetch failed for {country}: {e}")
-            # The live feed is only useful for target dekads inside the
-            # ~3-month window where CHIRPS dekadal hasn't finalized yet.
-            # For older issuances we'd otherwise iterate `chirps_raw_live`
-            # over thousands of pre-window dates that all return "no data
-            # available" — wasted minutes per country and a real risk of
-            # hanging the workflow once the issuance store accumulates
-            # historical entries. Only fetch live obs when at least one
-            # comparison target falls inside the live-feed window.
+            # Live feed only matters for target dekads CHIRPS dekadal hasn't
+            # finalized yet (~90-day window of today). Only fetch when a windowed
+            # issuance's target falls inside it.
             if cc.obs_live:
-                from datetime import date as _date, timedelta
-                today = _date.today()
-                live_window_start = today - timedelta(days=90)
-                # render only uses the first/most-recent target per issuance
-                # (`targets[0]`) for the comparison grid, so check those.
+                live_window_start = date.today() - timedelta(days=90)
                 needs_live = False
-                for iss in issuances:
+                for iss in windowed:
                     targets = _list_targets(Path(store_root), country, iss)
                     if targets and targets[0] >= live_window_start:
                         needs_live = True
@@ -162,66 +163,95 @@ def render_dashboard(
                             product=cc.obs_live,
                             variable=cc.variable,
                             region=_bbox_to_region(cc.bbox),
-                            hindcast=(today.year, today.year),
+                            hindcast=(date.today().year, date.today().year),
                         )[cc.variable].load()
                     except Exception as e:  # noqa: BLE001 — live obs is optional
                         print(f"[render] live obs unavailable for {country}: {e}")
 
-        for issuance in issuances:
+        rendered: list[date] = []
+        for issuance in windowed:
             targets = _list_targets(Path(store_root), country, issuance)
             if not targets:
                 continue
-            # For the first/most-recent target dekad, build the comparison row.
             target = targets[0]
-            panels: dict = {}
-            # Obs panel first so the reader sees truth on the left.
+            obs_ds = None
             if obs_clim is not None:
                 obs_ds = _obs_panel_for_target(obs_clim, obs_live, target, cc.variable)
-                if obs_ds is not None:
-                    panels["obs (CHIRPS)"] = obs_ds
+            method_panels: dict = {}
             for method in cc.methods:
                 ds = _load_method_panel(Path(store_root), country, issuance, method, target)
                 if ds is not None:
-                    panels[method] = ds
-            if not panels:
+                    method_panels[method] = ds
+            if not method_panels:
                 continue
-            fig = comparison_grid(panels, dekad_label=f"{country} {issuance} → {target}")
+            fig = comparison_grid(obs_ds, method_panels, dekad_label=f"{country} {issuance} → {target}")
             out_dir = dashboard_root / country / issuance.isoformat()
             out_dir.mkdir(parents=True, exist_ok=True)
-            out_path = out_dir / "comparison.png"
-            fig.savefig(out_path, dpi=80, bbox_inches="tight")
-            country_entries.append((issuance, out_path.relative_to(dashboard_root)))
+            fig.savefig(out_dir / "comparison.png", dpi=80, bbox_inches="tight")
+            rendered.append(issuance)
 
-        # Metrics panel per country (always emit, even if empty).
+        # Metrics panel per country (always emit, full history).
         scores = _load_scores(Path(verification_root), country)
         metrics_fig = metrics_panel(scores, country=country)
         metrics_path = dashboard_root / country / "metrics.png"
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_fig.savefig(metrics_path, dpi=80, bbox_inches="tight")
 
-        index_entries.append((country, country_entries))
+        explorer[country] = [d.isoformat() for d in sorted(rendered, reverse=True)]
 
-    _write_index(dashboard_root, index_entries)
+    _write_index(dashboard_root, explorer)
 
 
-def _write_index(dashboard_root: Path, entries: list[tuple[str, list[tuple[date, Path]]]]) -> None:
-    parts = ["<!doctype html>", "<html><head><meta charset='utf-8'>",
-             "<title>S2S testbed dashboard</title>",
-             "<style>body{font-family:sans-serif;max-width:1100px;margin:1em auto;padding:0 1em;background:#111;color:#eee} "
-             "h1{font-size:1.4em} h2{font-size:1.1em;margin-top:1.5em} "
-             "img{max-width:100%;height:auto;display:block;margin:0.5em 0;border:1px solid #444;background:#222} "
-             "a{color:#8df}</style></head><body>",
-             "<h1>S2S testbed dashboard</h1>"]
-    for country, issuances in entries:
-        parts.append(f"<h2>{html.escape(country)}</h2>")
-        parts.append(f"<p><strong>Metrics:</strong></p><img src='{country}/metrics.png' alt='{country} metrics'>")
-        if not issuances:
-            parts.append("<p><em>No issuances rendered.</em></p>")
-            continue
-        parts.append("<p><strong>Comparison grids by issuance:</strong></p>")
-        for issuance, rel in sorted(issuances):
-            parts.append(f"<h3>{issuance.isoformat()}</h3>"
-                         f"<img src='{html.escape(str(rel))}' alt='{country} {issuance}'>")
+def _write_index(dashboard_root: Path, explorer: dict[str, list[str]]) -> None:
+    parts = [
+        "<!doctype html>",
+        "<html lang='en'><head><meta charset='utf-8'>",
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>",
+        "<title>S2S testbed dashboard</title>",
+        "<link rel='stylesheet' href='../theme.css'>",
+        "</head><body>",
+        "<header><p><a href='../'>&larr; All forecasts</a></p>",
+        "<h1>Sub-seasonal (S2S) testbed</h1></header>",
+        "<h2>Forecast vs. observed &mdash; explore by issuance</h2>",
+    ]
+    if any(explorer.values()):
+        parts.append(
+            "<p class='controls'>"
+            "<label>Country: <select id='sel-country'></select></label> "
+            "<label>Issuance: <select id='sel-issuance'></select></label>"
+            "</p>"
+            "<img id='comparison' alt='forecast vs observed comparison grid'>"
+        )
+        parts.append(
+            "<script>\n"
+            f"const COMPARISONS = {json.dumps(explorer)};\n"
+            "const csel = document.getElementById('sel-country');\n"
+            "const isel = document.getElementById('sel-issuance');\n"
+            "const img = document.getElementById('comparison');\n"
+            "for (const c of Object.keys(COMPARISONS)) {\n"
+            "  if (COMPARISONS[c].length) {\n"
+            "    const o = document.createElement('option'); o.value = c; o.textContent = c;\n"
+            "    csel.appendChild(o);\n"
+            "  }\n"
+            "}\n"
+            "function fillIssuances() {\n"
+            "  isel.innerHTML = '';\n"
+            "  for (const d of COMPARISONS[csel.value]) {\n"
+            "    const o = document.createElement('option'); o.value = d; o.textContent = d;\n"
+            "    isel.appendChild(o);\n"
+            "  }\n"
+            "}\n"
+            "function showComparison() {\n"
+            "  img.src = csel.value + '/' + isel.value + '/comparison.png';\n"
+            "  img.alt = csel.value + ' ' + isel.value;\n"
+            "}\n"
+            "csel.addEventListener('change', () => { fillIssuances(); showComparison(); });\n"
+            "isel.addEventListener('change', showComparison);\n"
+            "fillIssuances(); showComparison();\n"
+            "</script>"
+        )
+    else:
+        parts.append("<p><em>No comparison maps in the current window.</em></p>")
     parts.append("</body></html>")
     (dashboard_root / "index.html").write_text("\n".join(parts))
 

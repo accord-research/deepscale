@@ -37,6 +37,7 @@ class S2SConfig:
     lead_days: tuple[int, int]
     climatology_years: tuple[int, int]
     store_root: str
+    comparison_window_days: int = 90
 
 
 def load_config(path: str | Path) -> S2SConfig:
@@ -67,4 +68,5 @@ def load_config(path: str | Path) -> S2SConfig:
         lead_days=(int(raw["lead_days"]["min"]), int(raw["lead_days"]["max"])),
         climatology_years=tuple(raw["climatology_years"]),
         store_root=os.environ.get("S2S_STORE_ROOT", str(raw["store_root"])),
+        comparison_window_days=int(raw.get("comparison_window_days", 90)),
     )

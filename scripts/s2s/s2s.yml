@@ -15,6 +15,12 @@ climatology_years: [1991, 2020]
 
 store_root: issuances
 
+# Render forecast-vs-obs comparison maps only for issuances within this many days
+# of the most recent issuance (they sit behind the dashboard's issuance selector).
+# Skill-over-time metrics always use full history. Bounded so the page, render
+# time, and gh-pages branch don't grow without limit as the testbed runs for years.
+comparison_window_days: 90
+
 countries:
   kenya:
     bbox: { min_lat: -5.0, max_lat: 5.5, min_lon: 33.5, max_lon: 42.0 }

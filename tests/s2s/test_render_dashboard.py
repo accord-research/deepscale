@@ -85,6 +85,13 @@ def test_render_dashboard_produces_pngs(cfg_path, tmp_path):
     html = (dashboard / "index.html").read_text()
     assert "kenya" in html
     assert "2026-05-15" in html
+    assert "../theme.css" in html        # links the shared dark theme
+    assert "All forecasts" in html       # hub back-link present
+    # Skill-over-time plots are still rendered + deployed, but intentionally NOT
+    # surfaced on the public index page.
+    assert (dashboard / "kenya" / "metrics.png").exists()   # still created
+    assert "metrics.png" not in html                         # but not linked
+    assert "Skill over time" not in html                     # section removed
 
 
 def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
@@ -98,3 +105,31 @@ def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
         config_path=cfg_path,
     )
     assert (dashboard / "index.html").exists()
+
+
+def test_render_dashboard_windows_comparison_maps(cfg_path, tmp_path):
+    """Only issuances within comparison_window_days of the latest get a comparison
+    map; the selector lists exactly those. Skill metrics keep full history."""
+    from scripts.s2s.render_dashboard import render_dashboard
+    store = tmp_path / "issuances"
+    verif = tmp_path / "verification"
+    dashboard = tmp_path / "dashboard"
+
+    old = date(2026, 1, 1)        # > 90 days before the latest issuance
+    recent = date(2026, 5, 15)
+    _seed_store(store, "kenya", old, [date(2026, 1, 5)])
+    _seed_store(store, "kenya", recent, [date(2026, 5, 21)])
+
+    render_dashboard(store_root=store, verification_root=verif,
+                     dashboard_root=dashboard, config_path=cfg_path)
+
+    # In-window issuance has a comparison map; out-of-window one does not.
+    assert (dashboard / "kenya" / "2026-05-15" / "comparison.png").exists()
+    assert not (dashboard / "kenya" / "2026-01-01").exists()
+
+    html_txt = (dashboard / "index.html").read_text()
+    assert "sel-country" in html_txt and "sel-issuance" in html_txt   # selector markup
+    assert "COMPARISONS" in html_txt                                  # embedded data
+    assert "2026-05-15" in html_txt                                   # recent offered
+    assert "2026-01-01" not in html_txt                               # windowed out
+    assert (dashboard / "kenya" / "metrics.png").exists()             # full-history summary

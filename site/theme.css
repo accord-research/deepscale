@@ -1,0 +1,55 @@
+/* Shared dark theme for the DeepScale Pages site (hub + S2S + future seasonal).
+   Palette lifted from scripts/nightly/site/style.css so seasonal matches when revived. */
+:root {
+  color-scheme: only dark;
+  --bg: #1a1a1a;
+  --text: #e5e5e5;
+  --muted: #9ca3af;
+  --border: #2a2a2a;
+  --surface: #222;
+  --accent-bg: #1e3a5f;
+  --accent-fg: #93c5fd;
+  --ok-bg: #1f4d2b;
+  --ok-fg: #86efac;
+  --soon-bg: #4d1f1f;
+  --soon-fg: #fca5a5;
+}
+
+html, body { background: var(--bg); color: var(--text); }
+body {
+  font-family: -apple-system, system-ui, sans-serif;
+  max-width: 1100px; margin: 0 auto; padding: 1.5rem 1rem;
+}
+
+header { border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1rem; }
+header h1 { margin: 0.25rem 0 0.5rem; font-size: 1.4rem; }
+header p { color: var(--muted); margin: 0; }
+
+a { color: var(--accent-fg); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+h3 { font-size: 1rem; color: var(--muted); margin-top: 1rem; }
+
+img {
+  max-width: 100%; height: auto; display: block; margin: 0.5rem 0;
+  border: 1px solid var(--border); background: var(--bg);
+}
+
+/* Hub tiles */
+.cards { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 1.5rem; }
+.card {
+  display: block; flex: 1 1 280px; max-width: 360px; padding: 1.25rem;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); color: var(--text);
+}
+.card:hover { border-color: var(--accent-bg); }
+.card h2 { margin: 0 0 0.5rem; font-size: 1.2rem; color: var(--accent-fg); }
+.card p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+.card.disabled { opacity: 0.55; pointer-events: none; }
+.card.disabled h2 { color: var(--muted); }
+
+.badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 3px;
+         font-size: 0.75rem; margin-left: 0.4rem; vertical-align: middle; }
+.badge.live { background: var(--ok-bg); color: var(--ok-fg); }
+.badge.soon { background: var(--soon-bg); color: var(--soon-fg); }
