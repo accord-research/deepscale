@@ -94,6 +94,45 @@ def test_render_dashboard_produces_pngs(cfg_path, tmp_path):
     assert "Skill over time" not in html                     # section removed
 
 
+def _seed_store_methods(store_root: Path, country: str, issuance: date, targets: list[date], methods: list[str]):
+    from scripts.s2s.issuance_store import write_issuance
+    seed = 100
+    for method in methods:
+        for tgt in targets:
+            write_issuance(store_root, country, issuance, method, tgt, _make_method_ds(seed))
+            seed += 1
+
+
+def test_render_dashboard_flags_full_vs_degraded_and_adds_filter(cfg_path, tmp_path):
+    """Issuances with a downscaling method are flagged full; raw+climatology-only
+    ones are flagged not-full, and the index offers a 'full weeks only' checkbox
+    (default on) plus a 'baselines only' label for the degraded ones."""
+    import re
+    from scripts.s2s.render_dashboard import render_dashboard
+    store = tmp_path / "issuances"
+    verif = tmp_path / "verification"
+    dashboard = tmp_path / "dashboard"
+
+    tgt = [date(2026, 5, 21)]
+    _seed_store_methods(store, "kenya", date(2026, 5, 15), tgt, ["raw", "climatology", "bcsd"])  # full
+    _seed_store_methods(store, "kenya", date(2026, 5, 11), tgt, ["raw", "climatology"])          # degraded
+
+    render_dashboard(store_root=store, verification_root=verif, dashboard_root=dashboard, config_path=cfg_path)
+    html = (dashboard / "index.html").read_text()
+
+    # Checkbox present and defaulted on.
+    assert "id='full-only'" in html
+    assert "checkbox" in html and "checked" in html
+    # Embedded data distinguishes full from degraded.
+    m = re.search(r"const COMPARISONS = (.+);", html)
+    assert m, "COMPARISONS object not found in index.html"
+    by_date = {e["d"]: e["full"] for e in json.loads(m.group(1))["kenya"]}
+    assert by_date["2026-05-15"] is True    # has bcsd → full week
+    assert by_date["2026-05-11"] is False   # raw+climatology only → degraded
+    # Degraded issuances get a label so they don't read as broken.
+    assert "baselines only" in html
+
+
 def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
     """Empty store → index.html still produced, no crash."""
     from scripts.s2s.render_dashboard import render_dashboard

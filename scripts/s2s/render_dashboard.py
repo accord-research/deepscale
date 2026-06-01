@@ -178,7 +178,7 @@ def render_dashboard(
                     except Exception as e:  # noqa: BLE001 — live obs is optional
                         print(f"[render] live obs unavailable for {country}: {e}")
 
-        rendered: list[date] = []
+        rendered: list[tuple[date, bool]] = []
         for issuance in windowed:
             targets = _list_targets(Path(store_root), country, issuance)
             if not targets:
@@ -198,7 +198,10 @@ def render_dashboard(
             out_dir = dashboard_root / country / issuance.isoformat()
             out_dir.mkdir(parents=True, exist_ok=True)
             fig.savefig(out_dir / "comparison.png", dpi=80, bbox_inches="tight")
-            rendered.append(issuance)
+            # "Full" = the reforecast was available, so at least one downscaling
+            # method (anything beyond the raw + climatology baselines) ran.
+            is_full = any(m not in ("raw", "climatology") for m in method_panels)
+            rendered.append((issuance, is_full))
 
         # Metrics panel per country (always emit, full history).
         scores = _load_scores(Path(verification_root), country)
@@ -207,12 +210,15 @@ def render_dashboard(
         metrics_path.parent.mkdir(parents=True, exist_ok=True)
         metrics_fig.savefig(metrics_path, dpi=80, bbox_inches="tight")
 
-        explorer[country] = [d.isoformat() for d in sorted(rendered, reverse=True)]
+        explorer[country] = [
+            {"d": d.isoformat(), "full": full}
+            for d, full in sorted(rendered, key=lambda t: t[0], reverse=True)
+        ]
 
     _write_index(dashboard_root, explorer)
 
 
-def _write_index(dashboard_root: Path, explorer: dict[str, list[str]]) -> None:
+def _write_index(dashboard_root: Path, explorer: dict[str, list[dict]]) -> None:
     parts = [
         "<!doctype html>",
         "<html lang='en'><head><meta charset='utf-8'>",
@@ -228,16 +234,21 @@ def _write_index(dashboard_root: Path, explorer: dict[str, list[str]]) -> None:
         parts.append(
             "<p class='controls'>"
             "<label>Country: <select id='sel-country'></select></label> "
-            "<label>Issuance: <select id='sel-issuance'></select></label>"
+            "<label>Issuance: <select id='sel-issuance'></select></label> "
+            "<label><input type='checkbox' id='full-only' checked> "
+            "Full weeks only (with downscaling)</label>"
             "</p>"
             "<img id='comparison' alt='forecast vs observed comparison grid'>"
         )
         parts.append(
             "<script>\n"
+            # Each entry is {d: 'YYYY-MM-DD', full: bool}; full == the reforecast
+            # was available so the downscaling methods ran (not just raw+clim).
             f"const COMPARISONS = {json.dumps(explorer)};\n"
             "const csel = document.getElementById('sel-country');\n"
             "const isel = document.getElementById('sel-issuance');\n"
             "const img = document.getElementById('comparison');\n"
+            "const fullOnly = document.getElementById('full-only');\n"
             "for (const c of Object.keys(COMPARISONS)) {\n"
             "  if (COMPARISONS[c].length) {\n"
             "    const o = document.createElement('option'); o.value = c; o.textContent = c;\n"
@@ -246,17 +257,21 @@ def _write_index(dashboard_root: Path, explorer: dict[str, list[str]]) -> None:
             "}\n"
             "function fillIssuances() {\n"
             "  isel.innerHTML = '';\n"
-            "  for (const d of COMPARISONS[csel.value]) {\n"
-            "    const o = document.createElement('option'); o.value = d; o.textContent = d;\n"
+            "  const list = COMPARISONS[csel.value].filter(e => !fullOnly.checked || e.full);\n"
+            "  for (const e of list) {\n"
+            "    const o = document.createElement('option'); o.value = e.d;\n"
+            "    o.textContent = e.full ? e.d : e.d + '  (baselines only)';\n"
             "    isel.appendChild(o);\n"
             "  }\n"
             "}\n"
             "function showComparison() {\n"
+            "  if (!isel.value) { img.removeAttribute('src'); img.alt = 'no issuance in view'; return; }\n"
             "  img.src = csel.value + '/' + isel.value + '/comparison.png';\n"
             "  img.alt = csel.value + ' ' + isel.value;\n"
             "}\n"
             "csel.addEventListener('change', () => { fillIssuances(); showComparison(); });\n"
             "isel.addEventListener('change', showComparison);\n"
+            "fullOnly.addEventListener('change', () => { fillIssuances(); showComparison(); });\n"
             "fillIssuances(); showComparison();\n"
             "</script>"
         )
