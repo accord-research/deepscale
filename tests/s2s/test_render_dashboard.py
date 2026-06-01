@@ -131,6 +131,12 @@ def test_render_dashboard_flags_full_vs_degraded_and_adds_filter(cfg_path, tmp_p
     assert by_date["2026-05-11"] is False   # raw+climatology only → degraded
     # Degraded issuances get a label so they don't read as broken.
     assert "baselines only" in html
+    # Every entry also carries an obs flag, and the index defaults the selector
+    # to the most recent issuance that has observations (a full triptych) rather
+    # than the newest date (usually still obs-pending).
+    entries = json.loads(m.group(1))["kenya"]
+    assert all("obs" in e for e in entries)
+    assert "list.find(e => e.obs)" in html
 
 
 def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
