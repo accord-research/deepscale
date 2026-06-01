@@ -120,7 +120,7 @@ def render_dashboard(
     dashboard_root.mkdir(parents=True, exist_ok=True)
     window_days = cfg.comparison_window_days
 
-    explorer: dict[str, list[str]] = {}
+    explorer: dict[str, list[dict]] = {}
 
     for country in sorted(cfg.countries):
         cc = cfg.countries[country]
@@ -178,7 +178,7 @@ def render_dashboard(
                     except Exception as e:  # noqa: BLE001 — live obs is optional
                         print(f"[render] live obs unavailable for {country}: {e}")
 
-        rendered: list[tuple[date, bool]] = []
+        rendered: list[tuple[date, bool, bool]] = []
         for issuance in windowed:
             targets = _list_targets(Path(store_root), country, issuance)
             if not targets:
@@ -201,7 +201,10 @@ def render_dashboard(
             # "Full" = the reforecast was available, so at least one downscaling
             # method (anything beyond the raw + climatology baselines) ran.
             is_full = any(m not in ("raw", "climatology") for m in method_panels)
-            rendered.append((issuance, is_full))
+            # "obs" = the observation landed, so this issuance has the full
+            # observed | forecast | difference triptych (not just a forecast).
+            has_obs = obs_ds is not None
+            rendered.append((issuance, is_full, has_obs))
 
         # Metrics panel per country (always emit, full history).
         scores = _load_scores(Path(verification_root), country)
@@ -211,8 +214,8 @@ def render_dashboard(
         metrics_fig.savefig(metrics_path, dpi=80, bbox_inches="tight")
 
         explorer[country] = [
-            {"d": d.isoformat(), "full": full}
-            for d, full in sorted(rendered, key=lambda t: t[0], reverse=True)
+            {"d": d.isoformat(), "full": full, "obs": has_obs}
+            for d, full, has_obs in sorted(rendered, key=lambda t: t[0], reverse=True)
         ]
 
     _write_index(dashboard_root, explorer)
@@ -260,9 +263,16 @@ def _write_index(dashboard_root: Path, explorer: dict[str, list[dict]]) -> None:
             "  const list = COMPARISONS[csel.value].filter(e => !fullOnly.checked || e.full);\n"
             "  for (const e of list) {\n"
             "    const o = document.createElement('option'); o.value = e.d;\n"
-            "    o.textContent = e.full ? e.d : e.d + '  (baselines only)';\n"
+            "    let label = e.full ? e.d : e.d + '  (baselines only)';\n"
+            "    if (!e.obs) label += '  · obs pending';\n"
+            "    o.textContent = label;\n"
             "    isel.appendChild(o);\n"
             "  }\n"
+            "  // Default to the most recent issuance that has observations (a full\n"
+            "  // observed | forecast | difference triptych) instead of the newest\n"
+            "  // date, which is usually still obs-pending.\n"
+            "  const withObs = list.find(e => e.obs);\n"
+            "  isel.value = withObs ? withObs.d : (list.length ? list[0].d : '');\n"
             "}\n"
             "function showComparison() {\n"
             "  if (!isel.value) { img.removeAttribute('src'); img.alt = 'no issuance in view'; return; }\n"

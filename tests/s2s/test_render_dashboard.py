@@ -131,6 +131,12 @@ def test_render_dashboard_flags_full_vs_degraded_and_adds_filter(cfg_path, tmp_p
     assert by_date["2026-05-11"] is False   # raw+climatology only → degraded
     # Degraded issuances get a label so they don't read as broken.
     assert "baselines only" in html
+    # Every entry also carries an obs flag, and the index defaults the selector
+    # to the most recent issuance that has observations (a full triptych) rather
+    # than the newest date (usually still obs-pending).
+    entries = json.loads(m.group(1))["kenya"]
+    assert all("obs" in e for e in entries)
+    assert "list.find(e => e.obs)" in html
 
 
 def test_render_dashboard_skips_missing_data(cfg_path, tmp_path):
@@ -172,3 +178,28 @@ def test_render_dashboard_windows_comparison_maps(cfg_path, tmp_path):
     assert "2026-05-15" in html_txt                                   # recent offered
     assert "2026-01-01" not in html_txt                               # windowed out
     assert (dashboard / "kenya" / "metrics.png").exists()             # full-history summary
+
+
+def test_comparison_grid_obs_pending_stays_three_columns():
+    """With no obs yet the grid keeps observed | forecast | difference (3 cols)
+    with 'pending' placeholders, instead of collapsing to one narrow column —
+    and the method row labels read horizontally (rotation 0)."""
+    import matplotlib.pyplot as plt
+    from scripts.s2s.plotting import comparison_grid
+
+    methods = {m: _make_method_ds(i) for i, m in enumerate(["raw", "climatology", "bcsd"])}
+    fig = comparison_grid(None, methods, dekad_label="2026-05-21")
+    try:
+        titles = [ax.get_title() for ax in fig.axes]
+        assert any("observed" in t for t in titles)      # all three column headers
+        assert any(t.strip() == "forecast" for t in titles)
+        assert any("difference" in t for t in titles)
+        # Empty obs/difference cells are placeholders, not blank.
+        texts = [t.get_text().lower() for ax in fig.axes for t in ax.texts]
+        assert any("pending" in t for t in texts)
+        # Row labels read horizontally (vertical labels were half the "rotated" look).
+        rotations = [ax.yaxis.label.get_rotation() for ax in fig.axes
+                     if ax.yaxis.label.get_text() in {"raw", "climatology", "bcsd"}]
+        assert rotations and all(r == 0 for r in rotations)
+    finally:
+        plt.close(fig)
