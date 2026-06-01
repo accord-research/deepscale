@@ -56,6 +56,18 @@ _AMOUNT_CMAP = "YlGnBu"  # sequential precip: light = dry, blue-green = wet
 _DIFF_CMAP = "BrBG"      # diverging anomaly: brown = drier, teal = wetter (centered on 0)
 
 
+def _pending_panel(ax, label: str) -> None:
+    """Placeholder for an obs/difference cell whose observation hasn't landed yet.
+
+    Keeps the 3-column layout intact (so obs-pending issuances don't collapse to a
+    narrow strip) and labels the empty space instead of leaving it blank.
+    """
+    ax.text(
+        0.5, 0.5, label, ha="center", va="center",
+        fontsize=9, color=_DARK_MUTED, transform=ax.transAxes,
+    )
+
+
 def comparison_grid(
     obs: xr.Dataset | None,
     methods: Mapping[str, xr.Dataset],
@@ -66,15 +78,19 @@ def comparison_grid(
 
     ``methods``: ordered mapping {method_name: Dataset with a 'mean' var on (lat, lon)}.
     ``obs``: Dataset with 'mean', or None when the observation for this dekad isn't
-    archived yet. With obs, each method gets a row of
-    ``observed | forecast | (forecast - obs)`` — sequential amounts (shared scale)
-    plus a diverging difference panel centered on zero. Without obs, only the
-    forecast column is drawn (the difference appears once obs lands).
+    archived yet. Each method gets a row of ``observed | forecast | (forecast - obs)``
+    — sequential amounts on a shared scale plus a diverging difference panel centered
+    on zero. The layout is always three columns: when obs hasn't landed yet, the
+    observed and difference cells show a "pending" placeholder rather than collapsing
+    to a single narrow column.
     """
     names = list(methods)
     n = len(names)
     has_obs = obs is not None
-    ncols = 3 if has_obs else 1
+    # Always observed | forecast | difference. Holding the 3-column shape even for
+    # obs-pending issuances keeps the most-recent (default) view from collapsing
+    # into a narrow vertical strip that reads as wrongly oriented.
+    ncols = 3
     fig, axes = plt.subplots(
         n, ncols, figsize=(3.4 * ncols, 3.0 * n), constrained_layout=True, squeeze=False
     )
@@ -101,35 +117,42 @@ def comparison_grid(
     amesh = dmesh = None
     for i, name in enumerate(names):
         fc = methods[name]["mean"]
+        ax_obs, ax_fc, ax_diff = axes[i, 0], axes[i, 1], axes[i, 2]
+
+        # Forecast always occupies the middle column, so the column meaning is
+        # identical whether or not obs is present.
+        amesh = ax_fc.pcolormesh(
+            fc["lon"], fc["lat"], fc.values,
+            cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
+        )
         if has_obs:
             ob = obs["mean"]
-            amesh = axes[i, 0].pcolormesh(
+            ax_obs.pcolormesh(
                 ob["lon"], ob["lat"], ob.values,
                 cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
             )
-            axes[i, 1].pcolormesh(
-                fc["lon"], fc["lat"], fc.values,
-                cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
-            )
-            dmesh = axes[i, 2].pcolormesh(
+            dmesh = ax_diff.pcolormesh(
                 fc["lon"], fc["lat"], fc.values - ob.values,
                 cmap=_DIFF_CMAP, vmin=-dmax, vmax=dmax, shading="auto",
             )
-            if i == 0:
-                axes[i, 0].set_title("observed (CHIRPS)", fontsize=10)
-                axes[i, 1].set_title("forecast", fontsize=10)
-                axes[i, 2].set_title("difference (fcst − obs)", fontsize=10)
         else:
-            amesh = axes[i, 0].pcolormesh(
-                fc["lon"], fc["lat"], fc.values,
-                cmap=_AMOUNT_CMAP, vmin=0, vmax=amax, shading="auto",
-            )
-            if i == 0:
-                axes[i, 0].set_title("forecast (obs pending)", fontsize=10)
-        axes[i, 0].set_ylabel(name, fontsize=11, fontweight="bold")
-        for j in range(ncols):
-            axes[i, j].set_xticks([])
-            axes[i, j].set_yticks([])
+            _pending_panel(ax_obs, "observed\n(pending)")
+            _pending_panel(ax_diff, "difference\n(pending)")
+
+        if i == 0:
+            ax_obs.set_title("observed (CHIRPS)", fontsize=10)
+            ax_fc.set_title("forecast", fontsize=10)
+            ax_diff.set_title("difference (fcst − obs)", fontsize=10)
+
+        # Method name as a horizontal row label (rotation=0) so it reads
+        # left-to-right rather than sideways up the y-axis.
+        ax_obs.set_ylabel(
+            name, rotation=0, ha="right", va="center",
+            fontsize=11, fontweight="bold", labelpad=12,
+        )
+        for ax in (ax_obs, ax_fc, ax_diff):
+            ax.set_xticks([])
+            ax.set_yticks([])
 
     allax = axes.ravel().tolist()
     if has_obs:
