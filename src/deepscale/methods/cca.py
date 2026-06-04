@@ -10,7 +10,7 @@ Algorithm (CPT's full_cca + cca_predict):
 """
 import numpy as np
 import xarray as xr
-from scipy.stats import kendalltau
+from scipy.stats import kendalltau, norm
 from .base import MethodBase
 from ..registry import register_method
 
@@ -36,17 +36,48 @@ def _svd_pca(X, n_components):
 @register_method("cca")
 class CCAMethod(MethodBase):
     def __init__(self, n_modes=3, x_eof_modes=None, y_eof_modes=None,
-                 cca_modes=None, standardize=False):
+                 cca_modes=None, standardize=False,
+                 transform_predictand=None, tailoring=None,
+                 drymask_threshold=None, synchronous_predictors=True):
         self.n_modes = n_modes
         self.x_eof_modes = x_eof_modes
         self.y_eof_modes = y_eof_modes
         self.cca_modes = cca_modes
         self.standardize = standardize
+        # --- CPT_ARGS parity (§7) ---
+        # transform_predictand: None | "Empirical" (rank -> normal-score round
+        #   trip on the predictand, inverted after predict). "Gamma" is deferred
+        #   (Gamma on demeaned / zero-inflated precip is ill-posed; see §5).
+        # tailoring: None | "Anomaly". "Anomaly" returns the forecast as an
+        #   anomaly from climatology (the long-term mean is not added back).
+        # drymask_threshold: float | None. Predictand cells whose climatological
+        #   mean is below this are excluded from the SVD (masked *before* the fit).
+        # synchronous_predictors: assumed True (predictor and predictand share a
+        #   year axis). Exposed for CPT-config parity; no behaviour change.
+        self.transform_predictand = transform_predictand
+        self.tailoring = tailoring
+        self.drymask_threshold = drymask_threshold
+        self.synchronous_predictors = synchronous_predictors
 
     def fit(self, hindcast, obs, **kwargs):
         x_eof_modes = kwargs.get("x_eof_modes", self.x_eof_modes)
         y_eof_modes = kwargs.get("y_eof_modes", self.y_eof_modes)
         cca_modes = kwargs.get("cca_modes", self.cca_modes) or kwargs.get("n_modes", self.n_modes)
+        transform_predictand = kwargs.get("transform_predictand", self.transform_predictand)
+        drymask_threshold = kwargs.get("drymask_threshold", self.drymask_threshold)
+        # Stash for predict() (CV always calls fit before predict).
+        self.transform_predictand_ = transform_predictand
+        self.tailoring_ = kwargs.get("tailoring", self.tailoring)
+        if transform_predictand == "Gamma":
+            raise NotImplementedError(
+                "transform_predictand='Gamma' is deferred (Gamma on demeaned / "
+                "zero-inflated precip is ill-posed; see §5). Use 'Empirical' or None."
+            )
+        if transform_predictand not in (None, "Empirical"):
+            raise ValueError(
+                f"transform_predictand must be None or 'Empirical' (V1); got "
+                f"{transform_predictand!r}."
+            )
 
         gcm_mean = hindcast.mean("member")
         n_years = len(gcm_mean.year)
@@ -54,13 +85,28 @@ class CCAMethod(MethodBase):
         X = gcm_mean.values.reshape(n_years, -1)
         Y = obs.values.reshape(n_years, -1)
 
-        # Mask out columns that are all-NaN
+        # Mask out columns that are all-NaN.
         self.x_valid_ = ~np.isnan(X).all(axis=0)
         self.y_valid_ = ~np.isnan(Y).all(axis=0)
+        # Drymask (§7): exclude predictand cells whose climatological mean is
+        # below the threshold *before* the fit, so they never enter the SVD.
+        if drymask_threshold is not None:
+            with np.errstate(invalid="ignore"):
+                y_clim = np.nanmean(Y, axis=0)
+            self.y_valid_ = self.y_valid_ & (y_clim >= drymask_threshold)
         X = X[:, self.x_valid_]
         Y = Y[:, self.y_valid_]
         X = np.nan_to_num(X, nan=np.nanmean(X))
         Y = np.nan_to_num(Y, nan=np.nanmean(Y))
+
+        # transform_predictand="Empirical": map each predictand column to normal
+        # scores (rank -> plotting position -> Gaussian quantile) before fitting;
+        # store the sorted values per column to invert after predict.
+        if transform_predictand == "Empirical":
+            self._y_sorted = np.sort(Y, axis=0)
+            self._y_plot_pos = (np.arange(1, n_years + 1) - 0.5) / n_years
+            ranks = Y.argsort(axis=0).argsort(axis=0) + 1
+            Y = norm.ppf((ranks - 0.5) / n_years)
 
         # Center
         self.x_mean_ = X.mean(axis=0)
@@ -177,7 +223,25 @@ class CCAMethod(MethodBase):
             y_pred_valid = fcast / self.y_wt_
             if self.y_std_ is not None:
                 y_pred_valid = y_pred_valid * self.y_std_
-            y_pred_valid = y_pred_valid + self.y_mean_
+            # tailoring="Anomaly": leave the forecast as an anomaly (don't add
+            # the climatological mean back). Default adds it back (full field).
+            if getattr(self, "tailoring_", None) != "Anomaly":
+                y_pred_valid = y_pred_valid + self.y_mean_
+
+            # Invert the empirical predictand transform: normal score -> uniform
+            # (Gaussian CDF) -> data value (interpolated on the stored per-cell
+            # empirical distribution). Bounded to the observed range.
+            if getattr(self, "transform_predictand_", None) == "Empirical":
+                if getattr(self, "tailoring_", None) == "Anomaly":
+                    raise NotImplementedError(
+                        "transform_predictand='Empirical' with tailoring='Anomaly' "
+                        "is unsupported (the inverse transform needs the full field)."
+                    )
+                u = norm.cdf(y_pred_valid)
+                inv = np.empty_like(y_pred_valid)
+                for j in range(y_pred_valid.shape[0]):
+                    inv[j] = np.interp(u[j], self._y_plot_pos, self._y_sorted[:, j])
+                y_pred_valid = inv
 
             y_full = np.full(len(self.y_valid_), np.nan)
             y_full[self.y_valid_] = y_pred_valid

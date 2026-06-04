@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 plot = ["matplotlib"]
 plotting = ["cartopy>=0.22", "matplotlib>=3.7", "rioxarray"]
-dev = ["pytest", "PyYAML", "matplotlib"]
+dev = ["pytest", "pytest-cov", "PyYAML", "matplotlib"]
 # GPU dependencies for CorrDiff (torch, earth2studio, physicsnemo) are not on
 # PyPI and must be installed manually.  See src/deepscale/methods/corrdiff.py
 # for instructions.
@@ -34,4 +34,28 @@ markers = [
     "integration: requires real data",
     "agreement: DeepScale vs PyCPT reference agreement tests",
     "gpu: requires NVIDIA GPU and earth2studio",
+]
+
+# Coverage is opt-in (not in addopts) so a bare `pytest` works without
+# pytest-cov installed. To check the §9 gate (>85% on src/deepscale, unit
+# suite < 30s):
+#   pytest -m "not integration and not gpu" \
+#       --cov=deepscale --cov-report=term-missing
+[tool.coverage.run]
+source = ["src/deepscale"]
+omit = [
+    # ML tiers not yet implemented (§13–§17); excluded so their empty modules
+    # don't drag the Part-A coverage number down.
+    "*/methods/corrdiff*",
+    "*/methods/prithvi*",
+    "*/methods/unet*",
+    "*/methods/xgboost*",
+    "*/methods/random_forest*",
+    # Visualization layer: cartopy-gated map rendering, exercised by the
+    # plotting examples (which need the optional `plotting` extra), not the
+    # algorithmic unit gate.
+    "*/plotting/*",
+    # Reporting/dashboard subsystem (Pages hub, SVSLRF) — separate from the
+    # Part-A forecasting core this §9 gate measures.
+    "*/reporting/*",
 ]

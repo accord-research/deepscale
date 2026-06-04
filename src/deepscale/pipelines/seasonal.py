@@ -195,6 +195,18 @@ def seasonal_mme(
     # MME mean for the forecast year (consumer-facing 'forecast' scalar map).
     forecast_mean = forecast_members.mean("member")
 
+    # Skillmask (§7): where cross-validated Pearson skill is below the
+    # threshold, replace the forecast with climatology. This changes forecast
+    # *values* (deterministic -> climatological mean; tercile -> uniform 1/3),
+    # not just a display mask. Cells with undefined skill (NaN) are left as-is.
+    skillmask_threshold = (cpt_args or {}).get("skillmask_threshold")
+    if skillmask_threshold is not None:
+        pearson = xr.corr(ensemble_result.forecast, obs_sliced, dim="year")
+        low_skill = pearson < skillmask_threshold
+        climo_mean = obs_sliced.mean("year")
+        forecast_mean = xr.where(low_skill, climo_mean, forecast_mean)
+        tercile_forecast = xr.where(low_skill, 1.0 / 3.0, tercile_forecast)
+
     metadata = {
         "years_used": list(years),
         "cv": cv,
@@ -288,6 +300,9 @@ def _resolve_forecast_year(predictor_tracks, intersection_years, forecast_year):
 _METHOD_PARAMS = (
     "n_modes", "x_eof_modes", "y_eof_modes", "cca_modes",
     "device", "n_samples", "target_variable", "standardize",
+    # CPT_ARGS knobs applied inside the method (§7). skillmask_threshold and
+    # crossvalidation_window are handled by the orchestrator, not the method.
+    "transform_predictand", "tailoring", "drymask_threshold",
 )
 
 
@@ -316,12 +331,21 @@ def _per_model_cv(hcst, fcst, obs_sliced, *, method, cv_scheme, cpt_args,
     all_years = list(obs_sliced.year.values)
 
     # ---- CV loop: held-out predictions for each obs year. ----
+    import inspect
     cv_fn = get_cv(cv_scheme) if isinstance(cv_scheme, str) else cv_scheme
+    # crossvalidation_window (§7): widen the leave-out window for schemes that
+    # accept it (e.g. loyo). deepscale's own default stays the scheme default
+    # (loyo=1); a PyCPT CPT_ARGS dict passes its own (typically 5).
+    cv_window = (cpt_args or {}).get("crossvalidation_window")
+    if cv_window is not None and "window" in inspect.signature(cv_fn).parameters:
+        fold_iter = cv_fn(all_years, window=cv_window)
+    else:
+        fold_iter = cv_fn(all_years)
     fold_predictions = []
     leverages = [] if hasattr(method_cls, "leverage") else None
     can_leverage = leverages is not None
 
-    for train_years, test in cv_fn(all_years):
+    for train_years, test in fold_iter:
         test_years = test if isinstance(test, list) else [test]
         m = method_cls(**method_kwargs)
         m.fit(hcst_sliced.sel(year=train_years), obs_sliced.sel(year=train_years),
