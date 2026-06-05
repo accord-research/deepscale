@@ -9,9 +9,12 @@ from .pipelines import seasonal_mme, SeasonalMMEResult
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
+from . import training     # train / inference separation (§10.2)
+from .training import train
 
 __all__ = [
     "downscale",
+    "train",
     "optimize",
     "ensemble",
     "skill",

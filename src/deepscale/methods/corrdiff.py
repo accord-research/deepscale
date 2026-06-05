@@ -231,6 +231,14 @@ class CorrDiffMethod(MethodBase):
         self.target_variable = target_variable
         self._model = None
 
+    def save(self, path):
+        raise NotImplementedError(
+            "CorrDiff save/load is not supported yet: the pretrained torch model "
+            "isn't picklable. Tracked for the DL-training work (#27/#28)."
+        )
+
+    load = save  # same deferral message for both directions
+
     def _load_model(self):
         """Lazy-load the CorrDiff model from HuggingFace."""
         if self._model is not None:
