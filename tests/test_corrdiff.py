@@ -122,6 +122,9 @@ class _FakeModel:
 @pytest.fixture
 def _mock_earth2studio():
     """Patch earth2studio so CorrDiffMethod can load without real deps."""
+    # _FakeModel builds torch tensors, so torch must be importable. Skip
+    # cleanly (rather than error at fixture setup) when it isn't installed.
+    pytest.importorskip("torch")
     fake_model = _FakeModel()
 
     fake_cls = MagicMock()
@@ -150,6 +153,21 @@ def test_corrdiff_registered():
 def test_is_pretrained_flag():
     from deepscale.methods.corrdiff import CorrDiffMethod
     assert CorrDiffMethod.is_pretrained is True
+
+
+def test_corrdiff_save_load_raise_not_implemented():
+    """save/load are deferred for the pretrained model (#27/#28).
+
+    Uses object.__new__ to bypass __init__ (which requires torch); the
+    override raises before touching any model state, so this needs no deps
+    and runs even on machines without torch.
+    """
+    from deepscale.methods.corrdiff import CorrDiffMethod
+    m = object.__new__(CorrDiffMethod)
+    with pytest.raises(NotImplementedError, match="#27/#28"):
+        m.save("ignored.pkl")
+    with pytest.raises(NotImplementedError, match="#27/#28"):
+        m.load("ignored.pkl")
 
 
 def test_import_error_without_torch(monkeypatch):

@@ -637,3 +637,217 @@ def test_climatology_predict_squeezes_singleton_year(
     fc_with_year = synthetic_gcm_forecast.expand_dims(year=[2030])
     result = m.predict(fc_with_year)
     assert result.dims == ("member", "lat", "lon")
+
+
+# ===================================================================
+# 7. Checkpoint-aware MethodBase (#26): is_trained / save / load
+# ===================================================================
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+
+def _fresh_methods():
+    """Default-constructed instances of every picklable method."""
+    from deepscale.methods.bcsd import BCSDMethod
+    from deepscale.methods.cca import CCAMethod
+    from deepscale.methods.climatology import ClimatologyMethod
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    return [
+        BCSDMethod(),
+        CCAMethod(n_modes=2),
+        ClimatologyMethod(),
+        RankAnalogMethod(),
+    ]
+
+
+def _method_specs():
+    """(Class, kwargs) for a fresh instance of each picklable method."""
+    from deepscale.methods.bcsd import BCSDMethod
+    from deepscale.methods.cca import CCAMethod
+    from deepscale.methods.climatology import ClimatologyMethod
+    from deepscale.methods.rank_analog import RankAnalogMethod
+    return [
+        (BCSDMethod, {}),
+        (CCAMethod, {"n_modes": 2}),
+        (ClimatologyMethod, {}),
+        (RankAnalogMethod, {}),
+    ]
+
+
+@pytest.mark.parametrize("method", _fresh_methods(), ids=lambda m: type(m).__name__)
+def test_is_trained_false_before_fit(method):
+    assert method.is_trained is False
+
+
+@pytest.mark.parametrize("method", _fresh_methods(), ids=lambda m: type(m).__name__)
+def test_is_trained_true_after_fit(method, synthetic_gcm_hindcast, synthetic_obs):
+    method.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert method.is_trained is True
+
+
+# --- save/load round-trip -------------------------------------------------
+
+@pytest.mark.parametrize("cls,kwargs", _method_specs(), ids=lambda x: getattr(x, "__name__", ""))
+def test_save_load_roundtrip_is_bit_identical(
+    cls, kwargs, synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs, tmp_path
+):
+    m1 = cls(**kwargs)
+    m1.fit(synthetic_gcm_hindcast, synthetic_obs)
+    expected = m1.predict(synthetic_gcm_forecast)
+
+    ckpt = tmp_path / "ckpt.pkl"
+    m1.save(ckpt)
+    assert ckpt.exists()
+
+    m2 = cls()  # fresh, default args — load() restores params + fitted state
+    m2.load(ckpt)
+    assert m2.is_trained is True
+    got = m2.predict(synthetic_gcm_forecast)
+
+    # assert_array_equal treats NaNs in matching positions as equal.
+    np.testing.assert_array_equal(got.values, expected.values)
+
+
+def test_load_returns_self_for_chaining(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs, tmp_path
+):
+    from deepscale.methods.cca import CCAMethod
+    ckpt = tmp_path / "ckpt.pkl"
+    m1 = CCAMethod(n_modes=2)
+    m1.fit(synthetic_gcm_hindcast, synthetic_obs)
+    m1.save(ckpt)
+    m2 = CCAMethod().load(ckpt)  # chained
+    assert isinstance(m2, CCAMethod)
+    assert m2.is_trained is True
+
+
+def test_save_unfitted_method_raises(tmp_path):
+    from deepscale.methods.cca import CCAMethod
+    m = CCAMethod(n_modes=2)
+    with pytest.raises(RuntimeError, match="not fitted"):
+        m.save(tmp_path / "x.pkl")
+
+
+def test_save_accepts_str_path(synthetic_gcm_hindcast, synthetic_obs, tmp_path):
+    from deepscale.methods.climatology import ClimatologyMethod
+    m = ClimatologyMethod()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    path_str = str(tmp_path / "ckpt.pkl")  # str, not Path
+    m.save(path_str)
+    ClimatologyMethod().load(path_str)  # must not raise
+
+
+# --- cross-process checkpoint integration ---------------------------------
+
+@pytest.mark.integration
+def test_checkpoint_survives_fresh_process(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs, tmp_path
+):
+    """fit+save here; load+predict in a brand-new interpreter; assert identical."""
+    from deepscale.methods.cca import CCAMethod
+
+    ckpt = tmp_path / "model.pkl"
+    fcst_nc = tmp_path / "forecast.nc"
+    expected_nc = tmp_path / "expected.nc"
+
+    m = CCAMethod(n_modes=2)
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    expected = m.predict(synthetic_gcm_forecast)
+    m.save(ckpt)
+
+    synthetic_gcm_forecast.rename("forecast").to_netcdf(fcst_nc)
+    expected.rename("expected").to_netcdf(expected_nc)
+
+    child = tmp_path / "child.py"
+    child.write_text(
+        "import numpy as np\n"
+        "import xarray as xr\n"
+        "from deepscale.methods.cca import CCAMethod\n"
+        f"forecast = xr.open_dataarray(r'{fcst_nc}')\n"
+        f"expected = xr.open_dataarray(r'{expected_nc}')\n"
+        "m = CCAMethod()\n"
+        f"m.load(r'{ckpt}')\n"
+        "assert m.is_trained\n"
+        "got = m.predict(forecast)\n"
+        "np.testing.assert_array_equal(got.values, expected.values)\n"
+        "print('ROUNDTRIP OK')\n"
+    )
+
+    r = subprocess.run(
+        [sys.executable, str(child)],
+        capture_output=True, text=True, cwd=str(_Path(__file__).resolve().parents[1]),
+    )
+    assert r.returncode == 0, r.stderr
+    assert "ROUNDTRIP OK" in r.stdout
+
+
+# ===================================================================
+# 8. ProbabilisticMethodBase (#29)
+# ===================================================================
+
+def _make_dummy_prob_cls():
+    """A minimal ProbabilisticMethodBase whose predict_distribution returns an
+    ensemble (the coarse forecast bilinearly regridded to the obs grid)."""
+    from deepscale.methods.base import ProbabilisticMethodBase
+
+    class _DummyProb(ProbabilisticMethodBase):
+        def fit(self, hindcast, obs, **kwargs):
+            self.obs_coords_ = {"lat": obs.lat, "lon": obs.lon}
+
+        def predict_distribution(self, forecast, **kwargs):
+            if "year" in forecast.dims and forecast.sizes.get("year") == 1:
+                forecast = forecast.isel(year=0, drop=True)
+            return forecast.interp(
+                lat=self.obs_coords_["lat"], lon=self.obs_coords_["lon"],
+                method="linear",
+            )
+
+    return _DummyProb
+
+
+def test_probabilistic_base_is_abstract():
+    """predict_distribution is abstract — the base can't be instantiated."""
+    from deepscale.methods.base import ProbabilisticMethodBase
+    with pytest.raises(TypeError):
+        ProbabilisticMethodBase()
+
+
+def test_probabilistic_predict_returns_ensemble_mean(
+    synthetic_gcm_hindcast, synthetic_gcm_forecast, synthetic_obs
+):
+    """Default predict() collapses predict_distribution() to its ensemble mean."""
+    m = _make_dummy_prob_cls()()
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    dist = m.predict_distribution(synthetic_gcm_forecast)
+    det = m.predict(synthetic_gcm_forecast)
+    assert "member" in dist.dims
+    assert "member" not in det.dims
+    np.testing.assert_allclose(det.values, dist.mean("member").values)
+
+
+def test_probabilistic_is_trained_after_fit(synthetic_gcm_hindcast, synthetic_obs):
+    """ProbabilisticMethodBase inherits is_trained from MethodBase."""
+    m = _make_dummy_prob_cls()()
+    assert m.is_trained is False
+    m.fit(synthetic_gcm_hindcast, synthetic_obs)
+    assert m.is_trained is True
+
+
+def test_downscale_tercile_uses_counting_for_probabilistic(
+    synthetic_gcm_hindcast, synthetic_obs
+):
+    """downscale(output_type='tercile') routes probabilistic methods through
+    predict_distribution + member counting (no Gaussian fit-to-deterministic)."""
+    import deepscale
+    from deepscale.registry import register_method
+    register_method("test_prob_counting")(_make_dummy_prob_cls())
+
+    terc = deepscale.downscale(
+        synthetic_gcm_hindcast, synthetic_obs,
+        method="test_prob_counting", output_type="tercile", verbose=False,
+    )
+    assert "tercile" in terc.dims
+    np.testing.assert_allclose(terc.sum("tercile").values, 1.0, atol=1e-9)
+    assert float(terc.std()) > 0  # not degenerate
