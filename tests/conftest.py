@@ -4,6 +4,18 @@ import pytest
 
 np.random.seed(42)
 
+
+def pytest_collection_modifyitems(config, items):
+    """Keep bare pytest runs on local/unit tests unless marker-gated tests are requested."""
+    if config.option.markexpr:
+        return
+    gated = {"agreement", "gpu", "integration"}
+    skip = pytest.mark.skip(reason="requires explicit marker selection")
+    for item in items:
+        if gated.intersection(item.keywords):
+            item.add_marker(skip)
+
+
 # Small spatial grids
 _COARSE_LAT = np.linspace(-4, 4, 5)
 _COARSE_LON = np.linspace(30, 38, 5)

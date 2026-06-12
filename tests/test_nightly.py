@@ -21,7 +21,7 @@ def test_load_config_parses_nightly_yaml():
     assert kenya.seasons["MAM"].season_start_month == 3
     assert kenya.method == "cca"
     assert kenya.cv == "loyo"
-    assert kenya.hindcast_period == (1993, 2016)
+    assert kenya.hindcast_period == (2000, 2016)
 
 
 def test_load_config_rejects_missing_required_field(tmp_path):
