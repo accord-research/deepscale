@@ -58,7 +58,7 @@ def _write_synthetic_store(store_root: Path, country: str, issuance: date, targe
 
 def _patched_fetch(*args, **kwargs):
     product = kwargs.get("product") or (args[0] if args else None)
-    if product == "obs/chirps-dekadal":
+    if product == "obs/chirps-v2-dekadal-rhiza":
         return _make_obs_daily().to_dataset()
     raise AssertionError(f"unexpected fetch call: {product=}")
 
@@ -72,7 +72,7 @@ def s2s_cfg(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.0, "min_lon": 33.0, "max_lon": 42.0},
                 "methods": ["raw", "climatology", "bcsd"],
-                "obs": "obs/chirps-dekadal",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },
@@ -170,9 +170,9 @@ def _make_obs_live_fine():
 
 def _patched_fetch_with_live(*args, **kwargs):
     product = kwargs.get("product") or (args[0] if args else None)
-    if product == "obs/chirps-dekadal":
+    if product == "obs/chirps-v2-dekadal-rhiza":
         return _make_obs_clim_only().to_dataset()
-    if product == "obs/chirps-live":
+    if product == "obs/chirps-live-rhiza":
         return _make_obs_live_fine().to_dataset()
     raise AssertionError(f"unexpected fetch call: {product=}")
 
@@ -186,8 +186,8 @@ def s2s_cfg_with_live(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.0, "min_lon": 33.0, "max_lon": 42.0},
                 "methods": ["raw", "climatology", "bcsd"],
-                "obs": "obs/chirps-dekadal",
-                "obs_live": "obs/chirps-live",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
+                "obs_live": "obs/chirps-live-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },

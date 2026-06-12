@@ -28,10 +28,12 @@
 # observations
 #     Single rosetta product ID for the verification dataset.
 #     Available:
-#       obs/era5     — ERA5 reanalysis (only option for temperature)
-#       obs/chirps   — CHIRPS v3 monthly COGs (precip only)
-#       obs/chirps-v2 — CHIRPS v2 monthly COGs (precip only)
-#     We currently use obs/chirps + predictand_var=precip. ERA5 is the
+#       obs/era5                  — ERA5 reanalysis (only option for temperature)
+#       obs/chirps-v3-monthly     — native UCSB CHIRPS v3 monthly COGs, 0.05° (precip)
+#       obs/chirps-v2-monthly     — native UCSB CHIRPS v2 monthly COGs, 0.05° (precip)
+#       obs/chirps-v3-daily-rhiza — Rhiza/Sheerwater CHIRPS v3 daily, 0.25° mirror (precip)
+#     We currently use obs/chirps-v3-daily-rhiza + predictand_var=precip (the
+#     0.25° daily mirror the old `obs/chirps` resolved to). ERA5 is the
 #     alternative when verifying against reanalysis.
 #
 # predictand_var
@@ -107,9 +109,9 @@ countries:
     bbox: { west: 33.5, east: 42.0, south: -5.0, north: 5.5 }
     models:
       - c3s/ecmwf
-    observations: obs/chirps
+    observations: obs/chirps-v3-daily-rhiza
     predictand_var: precip
-    hindcast_period: [1993, 2016]
+    hindcast_period: [2000, 2016]
     cv: loyo
     method: cca
     cpt_args:
@@ -122,9 +124,9 @@ countries:
     bbox: { west: 33.0, east: 48.0, south: 3.5, north: 15.0 }
     models:
       - c3s/ecmwf
-    observations: obs/chirps
+    observations: obs/chirps-v3-daily-rhiza
     predictand_var: precip
-    hindcast_period: [1993, 2016]
+    hindcast_period: [2000, 2016]
     cv: loyo
     method: cca
     cpt_args:
@@ -137,9 +139,9 @@ countries:
     bbox: { west: 2.5, east: 15.0, south: 4.0, north: 14.0 }
     models:
       - c3s/ecmwf
-    observations: obs/chirps
+    observations: obs/chirps-v3-daily-rhiza
     predictand_var: precip
-    hindcast_period: [1993, 2016]
+    hindcast_period: [2000, 2016]
     cv: loyo
     method: cca
     cpt_args:

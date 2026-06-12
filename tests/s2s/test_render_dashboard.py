@@ -44,7 +44,7 @@ def cfg_path(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.0, "min_lon": 33.0, "max_lon": 42.0},
                 "methods": ["raw", "climatology", "bcsd"],
-                "obs": "obs/chirps-dekadal",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },

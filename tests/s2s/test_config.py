@@ -13,7 +13,7 @@ def sample_config_path(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.5, "min_lon": 33.5, "max_lon": 42.0},
                 "methods": ["raw", "climatology", "bcsd", "cca", "rank-analog"],
-                "obs": "obs/chirps-dekadal",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },
@@ -34,7 +34,7 @@ def test_load_config_returns_object_with_countries(sample_config_path):
     kenya = cfg.countries["kenya"]
     assert kenya.bbox == {"min_lat": -5.0, "max_lat": 5.5, "min_lon": 33.5, "max_lon": 42.0}
     assert kenya.methods == ["raw", "climatology", "bcsd", "cca", "rank-analog"]
-    assert kenya.obs == "obs/chirps-dekadal"
+    assert kenya.obs == "obs/chirps-v2-dekadal-rhiza"
     assert kenya.forecast == "c3s/ecmwf-s2s"
 
 
@@ -53,7 +53,7 @@ def test_load_config_rejects_unknown_method_in_country(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.5, "min_lon": 33.5, "max_lon": 42.0},
                 "methods": ["nonexistent-method"],
-                "obs": "obs/chirps-dekadal",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },
@@ -74,3 +74,14 @@ def test_load_config_respects_env_override(sample_config_path, monkeypatch):
     monkeypatch.setenv("S2S_STORE_ROOT", "/tmp/override-store")
     cfg = load_config(sample_config_path)
     assert cfg.store_root == "/tmp/override-store"
+
+
+def test_checked_in_s2s_config_uses_current_chirps_product_names():
+    """Regression for the nightly S2S failure where verify fetched the removed
+    Rosetta alias ``obs/chirps-dekadal``."""
+    from scripts.s2s.config import load_config
+
+    cfg = load_config(Path("scripts/s2s/s2s.yml"))
+    for country in cfg.countries.values():
+        assert country.obs == "obs/chirps-v2-dekadal-rhiza"
+        assert country.obs_live == "obs/chirps-live-rhiza"

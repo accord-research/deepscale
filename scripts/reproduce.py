@@ -82,7 +82,7 @@ def fetch_obs(cfg):
     years = tuple(cfg["years"])
     coarsen = cfg["obs_coarsen"]
     target_months = SEASON_MONTHS[cfg["target"]]
-    ds = rosetta.fetch("obs/chirps-v2", "precip", hindcast=years, region=list(region))
+    ds = rosetta.fetch("obs/chirps-v2-monthly", "precip", hindcast=years, region=list(region))
     da = ds["precip"].where(ds["precip"] >= 0)
     seasonal = da.sel(time=da.time.dt.month.isin(target_months))
     # For seasons that cross a year boundary (e.g. DJF: months=[12,1,2]),

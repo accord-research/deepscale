@@ -258,7 +258,7 @@ def step1_data(cpt):
     gcm_ds = rosetta.fetch("c3s/ecmwf-monthly", "precip", init="2025-02",
                            target="MAM", hindcast=(FIRST_YEAR, FINAL_YEAR),
                            region=[-20, 20, 10, 75])
-    obs_ds = rosetta.fetch("obs/chirps-v2", "precip",
+    obs_ds = rosetta.fetch("obs/chirps-v2-monthly", "precip",
                            hindcast=(FIRST_YEAR, FINAL_YEAR),
                            region=[-12, 15, 22, 52])
 
