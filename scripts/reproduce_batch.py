@@ -122,7 +122,7 @@ def fetch_obs_ros(season_name, region, years, obs_coarsen):
     months = SEASON_MONTHS[season_name]
     cross  = months[0] > months[-1]            # True for DJF (Dec crosses year boundary)
 
-    obs_ds  = rosetta.fetch("obs/chirps-v2", "precip",
+    obs_ds  = rosetta.fetch("obs/chirps-v2-monthly", "precip",
                             hindcast=(years[0], years[-1]), region=region)
     obs_raw = obs_ds["precip"].where(obs_ds["precip"] >= 0)
     obs_sea = obs_raw.sel(time=obs_raw.time.dt.month.isin(months))

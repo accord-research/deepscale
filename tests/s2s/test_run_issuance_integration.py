@@ -84,7 +84,7 @@ def s2s_config_path(tmp_path):
             "kenya": {
                 "bbox": {"min_lat": -5.0, "max_lat": 5.5, "min_lon": 33.5, "max_lon": 42.0},
                 "methods": ["raw", "climatology", "bcsd", "rank-analog"],
-                "obs": "obs/chirps-dekadal",
+                "obs": "obs/chirps-v2-dekadal-rhiza",
                 "forecast": "c3s/ecmwf-s2s",
                 "variable": "precip",
             },
@@ -109,7 +109,7 @@ def _patched_fetch(*args, **kwargs):
         return _synthetic_forecast(init).to_dataset()
     if product == "c3s/ecmwf-s2s" and reforecast:
         return _synthetic_reforecast(init).to_dataset()
-    if product == "obs/chirps-dekadal":
+    if product == "obs/chirps-v2-dekadal-rhiza":
         return _synthetic_chirps_climatology().to_dataset()
     raise AssertionError(f"unexpected fetch call: {product=} {reforecast=}")
 
