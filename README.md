@@ -36,12 +36,13 @@ python deepscale/examples/demo_forecast.py
 
 See [Example workflow](#example-workflow) below for details on what this demo does and CDS prerequisites.
 
-## Core API (four functions)
+## Core API
 
 ```python
 import deepscale
 
 result = deepscale.downscale(gcm, obs, method="bcsd", ...)
+probs = deepscale.calibrate(predictor, obs, method="ereg", ...)
 best = deepscale.optimize(gcm, obs, methods=["bcsd", "cca"], ...)
 mme = deepscale.ensemble([best_gcm1, best_gcm2], obs, strategy="uniform")
 report = deepscale.skill(forecast, obs, metrics=["rpss", "roc"])
@@ -55,7 +56,8 @@ report = deepscale.skill(forecast, obs, metrics=["rpss", "roc"])
 
 ## Current scope (v0)
 
-- methods: BCSD, CCA
+- downscaling methods: BCSD, CCA
+- calibration methods: ensemble regression (`ereg`), logistic index calibration (`logit`)
 - metrics: RPSS, ROC area, Pearson correlation
 - cross-validation: LOYO
 - ensemble strategy: uniform weights
@@ -83,6 +85,89 @@ In short: Rosetta handles remote retrieval + normalization, and DeepScale starts
 The demo also requires CDS credentials configured in `~/.cdsapirc` with accepted dataset licenses — see the Rosetta README for setup.
 
 See `deepscale/examples/README.md` for full prerequisites and output details.
+
+## Calibration API
+
+Use `deepscale.calibrate()` when the predictor is already on the target grid, or
+when a scalar predictor index is being converted directly into tercile
+probabilities. Calibration methods return `(tercile, lat, lon)` probabilities,
+where `tercile=[0, 1, 2]` means below-normal, normal, and above-normal.
+
+### Ensemble regression (`method="ereg"`)
+
+`ereg` fits each model independently with per-grid-cell ordinary least squares:
+the ensemble-mean hindcast predicts the observed field, then the selected
+forecast year is converted to parametric tercile probabilities. Multi-model
+inputs are averaged after each model produces its own probability map.
+
+```python
+probs = deepscale.calibrate(
+    {
+        "ecmwf": (ecmwf_hindcast_on_obs_grid, ecmwf_forecast_on_obs_grid),
+        "ukmo": (ukmo_hindcast_on_obs_grid, ukmo_forecast_on_obs_grid),
+    },
+    obs,
+    method="ereg",
+    forecast_year=2026,
+)
+```
+
+Each hindcast should have `year`, optional `member`, and spatial dimensions
+named `lat/lon`, `latitude/longitude`, `Y/X`, or `y/x`. eReg is a calibration
+method, not a regridding method, so put model fields on the obs grid before
+calling it.
+
+If every provided forecast contains exactly one `year`, `forecast_year` can be
+omitted and is inferred. If no forecast is provided, eReg falls back to the
+requested year from the hindcast; with no requested year, it uses the maximum
+obs year.
+
+### Logistic index calibration (`method="logit"`)
+
+`logit` fits a gridded logistic relationship between a scalar predictor index
+and observed tercile occurrence. Pass the hindcast index series as `predictor`
+and the forecast-year index value as `forecast`.
+
+```python
+index = deepscale.Index.named("wvg")
+
+hindcast_index = index.reduce(sst_hindcast)
+forecast_index = index.reduce(sst_forecast, climatology=sst_hindcast)
+
+probs = deepscale.calibrate(
+    hindcast_index,
+    obs,
+    method="logit",
+    forecast=forecast_index,
+)
+```
+
+For gridded SST predictors, `LogitConfig` reduces hindcast and forecast fields
+through an `Index` before calling the same logit engine:
+
+```python
+probs = deepscale.calibrate(
+    predictor_hindcast=sst_hindcast,
+    predictor_forecast=sst_forecast,
+    obs=obs,
+    method=deepscale.LogitConfig(
+        index=deepscale.Index.named("wvg"),
+        detrend=True,
+        significance=0.1,
+    ),
+)
+```
+
+`logit` aligns index and observation years by the `year` coordinate and requires
+the forecast index to contain exactly one value. A `significance` mask uses the
+`statsmodels` backend automatically; otherwise the default backend is
+`sklearn`.
+
+Runnable examples:
+
+- [`examples/demo_ensemble_regression.py`](examples/demo_ensemble_regression.py)
+  for eReg.
+- [`examples/demo_logistic_wvg.py`](examples/demo_logistic_wvg.py) for WVG/logit.
 
 ## Relationship to Rosetta
 

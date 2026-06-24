@@ -1,5 +1,25 @@
 # DeepScale Examples
 
+## `demo_ensemble_regression.py`
+
+End-to-end `deepscale.calibrate(method="ereg")` example. It builds per-model
+hindcast/forecast pairs on the obs grid, runs ensemble-regression calibration,
+and writes a dominant-tercile map. Use `--synthetic` for a no-network smoke run.
+
+```bash
+python examples/demo_ensemble_regression.py --synthetic
+```
+
+## `demo_logistic_wvg.py`
+
+End-to-end `deepscale.calibrate(method=deepscale.LogitConfig(...))` example for
+the WVG SST index. It reduces gridded SST hindcast/forecast fields to a scalar
+index and produces below/normal/above tercile probabilities.
+
+```bash
+python examples/demo_logistic_wvg.py --synthetic
+```
+
 ## `seasonal_forecast_eastafrica_mam.py` (§8 reference)
 
 End-to-end PyCPT-parity reference: a 7-phase multi-model ensemble seasonal

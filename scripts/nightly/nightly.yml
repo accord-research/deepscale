@@ -19,9 +19,8 @@
 #             c3s/meteofrance, c3s/cmcc, c3s/dwd, c3s/ukmo, c3s/jma,
 #             c3s/jma-cps2, c3s/dwd-gcfs21, c3s/ecmwf-monthly,
 #             c3s/ecmwf-seas51c
-#       NMME: nmme/cfsv2, nmme/ccsm4, nmme/geoss2s, nmme/gemnemo,
-#             nmme/cesm1, nmme/canesm5, nmme/gem52nemo, nmme/spear,
-#             nmme/spearb, nmme/cansipsic4
+#       NMME: nmme/cfsv2, nmme/ccsm4, nmme/geoss2s, nmme/cesm1,
+#             nmme/spear, nmme/spearb, nmme/cansipsic4
 #             (plus -hindcast / -forecast variants where listed in the
 #             catalog)
 #

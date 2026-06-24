@@ -6,6 +6,8 @@ from .compare import skill_compare, ComparisonReport
 from .pev import prediction_error_variance
 from .flex_forecast import flex_forecast, FlexForecastResult
 from .pipelines import seasonal_mme, SeasonalMMEResult
+from .indices import Index
+from .calibrate import calibrate, LogitConfig
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -26,4 +28,7 @@ __all__ = [
     "FlexForecastResult",
     "seasonal_mme",
     "SeasonalMMEResult",
+    "Index",
+    "calibrate",
+    "LogitConfig",
 ]
