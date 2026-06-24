@@ -1,11 +1,21 @@
 _METHODS = {}
 _METRICS = {}
 _STRATEGIES = {}
+_CALIBRATORS = {}
 
 def register_method(name):
     def decorator(cls):
         _METHODS[name] = cls
         return cls
+    return decorator
+
+def register_calibrator(name):
+    """Register a calibrate-family method (probabilistic post-processing that
+    emits tercile probabilities with no resolution change), distinct from the
+    downscale-family methods registered with ``register_method``."""
+    def decorator(fn):
+        _CALIBRATORS[name] = fn
+        return fn
     return decorator
 
 def register_metric(name, *, aliases=()):
@@ -36,3 +46,10 @@ def get_strategy(name):
     if name not in _STRATEGIES:
         raise KeyError(f"Unknown strategy: {name}")
     return _STRATEGIES[name]
+
+def get_calibrator(name):
+    if name not in _CALIBRATORS:
+        raise KeyError(
+            f"Unknown calibrate method: {name!r}. Available: {sorted(_CALIBRATORS)}."
+        )
+    return _CALIBRATORS[name]

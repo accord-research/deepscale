@@ -377,21 +377,20 @@ def _per_model_cv(hcst, fcst, obs_sliced, *, method, cv_scheme, cpt_args,
     if fcst is not None:
         # Caller-provided forecast slice.
         if "year" in fcst.dims:
-            fcst_for_year = fcst.sel(year=[forecast_year])
+            fc_input = fcst.sel(year=[forecast_year])
         else:
-            fcst_for_year = fcst.expand_dims(year=[forecast_year])
-        forecast_pred = m_full.predict(fcst_for_year, **method_kwargs)
+            fc_input = fcst.expand_dims(year=[forecast_year])
     elif forecast_year in [int(y) for y in hcst.year.values]:
         # Forecast year lives inside the original hindcast range.
-        forecast_pred = m_full.predict(
-            hcst.sel(year=[forecast_year]), **method_kwargs,
-        )
+        fc_input = hcst.sel(year=[forecast_year])
     else:
         # Should not happen: _resolve_forecast_year should have caught this.
         raise ValueError(
             f"_per_model_cv: forecast_year={forecast_year} is unavailable in "
             f"both the provided forecast and the original hindcast."
         )
+
+    forecast_pred = m_full.predict(fc_input, **method_kwargs)
 
     if "year" in forecast_pred.dims and forecast_pred.sizes["year"] == 1:
         forecast_pred = forecast_pred.isel(year=0, drop=True)
