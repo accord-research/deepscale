@@ -1,5 +1,5 @@
 """
-Demo: the ProbabilisticMethodBase path (#29, §10.4).
+Demo: the ProbabilisticMethodBase path.
 
 Probabilistic methods (CorrDiff draws, XGBoost-quantile, EMOS) natively produce
 an ensemble/distribution. They subclass ProbabilisticMethodBase, which gives:
@@ -8,25 +8,19 @@ an ensemble/distribution. They subclass ProbabilisticMethodBase, which gives:
 and a tercile path that *counts members* instead of fitting a Gaussian to a
 single deterministic forecast.
 
-Network-free — uses small synthetic data + a minimal illustrative method.
+Network-free - uses small synthetic data + a minimal illustrative method.
 Run from the repository root:
 
     uv run python examples/demo_probabilistic_method.py
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import xarray as xr
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import deepscale  # noqa: E402
-from deepscale.methods.base import ProbabilisticMethodBase  # noqa: E402
-from deepscale.registry import register_method  # noqa: E402
-from deepscale.tercile import to_tercile  # noqa: E402
+import deepscale as ds
+from deepscale.methods.base import ProbabilisticMethodBase
+from deepscale.registry import register_method
+from deepscale.tercile import to_tercile
 
 
 @register_method("demo_spread")
@@ -68,9 +62,8 @@ def _synthetic_data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  PROBABILISTIC METHOD DEMO  (#29 §10.4)")
-    print("=" * 60)
+    header = "Probabilistic method (counting terciles)"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs = _synthetic_data()
     forecast = gcm.isel(year=-1, drop=True)
@@ -96,15 +89,13 @@ def main() -> None:
           f"P(above)={float(terc.sel(tercile=2).mean()):.2f}")
 
     print("\n[4] same path via the public downscale() API")
-    terc2 = deepscale.downscale(
+    terc2 = ds.downscale(
         gcm, obs, method="demo_spread", output_type="tercile", verbose=False
     )
     print(f"    downscale(output_type='tercile') -> dims={dict(terc2.sizes)}")
     assert "tercile" in terc2.dims
 
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\nprobabilistic method demo complete.")
 
 
 if __name__ == "__main__":

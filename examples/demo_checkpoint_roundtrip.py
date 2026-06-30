@@ -1,24 +1,19 @@
 """
 Demo: checkpoint a fitted downscaling method, reload it, and confirm the
-reloaded model reproduces the original prediction exactly (#26, §10.1).
+reloaded model reproduces the original prediction exactly.
 
-Network-free — uses small synthetic data. Run from the repository root:
+Network-free - uses small synthetic data. Run from the repository root:
 
     uv run python examples/demo_checkpoint_roundtrip.py
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
-
-# Allow running without installing the package.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from deepscale.methods.cca import CCAMethod  # noqa: E402
+from deepscale.methods.cca import CCAMethod
 
 
 def _synthetic_data():
@@ -46,9 +41,8 @@ def _synthetic_data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  CHECKPOINT ROUND-TRIP DEMO  (CCA, #26 §10.1)")
-    print("=" * 60)
+    header = "Checkpoint round-trip (CCA)"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs, forecast = _synthetic_data()
 
@@ -75,9 +69,7 @@ def main() -> None:
         np.testing.assert_array_equal(got.values, expected.values)
         print("    OK - reloaded prediction is bit-identical to the original.")
 
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\ncheckpoint round-trip demo complete.")
 
 
 if __name__ == "__main__":

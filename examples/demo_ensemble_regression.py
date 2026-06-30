@@ -11,44 +11,29 @@ average of each model's own calibrated-Gaussian terciles.
 Always writes a dominant-tercile map PNG to examples/output/.
 
 Run from the repository root:
-  python examples/demo_ensemble_regression.py            # real data (needs CDS)
-  python examples/demo_ensemble_regression.py --synthetic # offline, deterministic
+  uv run python examples/demo_ensemble_regression.py             # real data (needs CDS)
+  uv run python examples/demo_ensemble_regression.py --synthetic # offline, deterministic
 
-Prerequisites for the real-data path:
-  1. Rosetta + DeepScale importable (sibling checkouts or installed).
-  2. CDS credentials in ~/.cdsapirc and accepted C3S/ERA5 dataset licences.
-If CDS credentials/network are absent the real path fails at the fetch step —
-that is a pre-existing requirement, not a bug. Use --synthetic offline.
+Prerequisites for the real-data path: CDS credentials in ~/.cdsapirc and accepted
+C3S/ERA5 dataset licences. Missing credentials/network fail at the fetch step (a
+pre-existing requirement, not a bug). Use --synthetic offline.
 """
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 from pathlib import Path
-
-
-def _configure_import_paths() -> Path:
-    repo_root = Path(__file__).resolve().parents[1]
-    for rel in ("rosetta/src", "../rosetta/src", "src"):
-        p = (repo_root / rel).resolve()
-        if p.exists():
-            sys.path.insert(0, str(p))
-    return repo_root
-
-
-REPO_ROOT = _configure_import_paths()
 
 import numpy as np
 import xarray as xr
 import deepscale as ds
+from deepscale.plotting import plot_tercile_forecast
 
 REGION = [-5, 5, 33, 48]                 # East Africa [lat_s, lat_n, lon_w, lon_e]
 HINDCAST_YEARS = list(range(2000, 2015))
 INIT_MONTH = "02"
 TARGET = "MAM"
 MODELS = ["c3s/ecmwf-monthly", "c3s/meteofrance", "c3s/cmcc"]
-OUTPUT_DIR = REPO_ROOT / "examples" / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 CACHE_DIR = OUTPUT_DIR / "demo_cache"
 PNG = OUTPUT_DIR / "ensemble_regression_tercile.png"
 
@@ -124,7 +109,7 @@ def build_real():
 
 
 # --------------------------------------------------------------------------
-# Synthetic fallback (deterministic, offline) — known calibration + spatial pattern
+# Synthetic fallback (deterministic, offline): known calibration + spatial pattern
 # --------------------------------------------------------------------------
 def build_synthetic(slope=2.0, intercept=20.0, seed=0):
     rng = np.random.default_rng(seed)
@@ -149,10 +134,8 @@ def save_png(tercile, title):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from deepscale.plotting import plot_tercile_forecast
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(7, 5))
-    plot_tercile_forecast(tercile, ax=ax, title=title)
+    fig = plot_tercile_forecast(tercile, title=title)
     fig.savefig(PNG, dpi=130, bbox_inches="tight")
     plt.close(fig)
     print(f"  saved {PNG}")
@@ -165,16 +148,15 @@ def main() -> int:
                     help="use offline synthetic data instead of fetching real data")
     args = ap.parse_args()
 
-    print("=" * 64)
-    print("  ENSEMBLE REGRESSION (eReg) — " + ("synthetic" if args.synthetic else "real data"))
-    print("=" * 64)
+    header = "Ensemble regression (eReg): " + ("synthetic" if args.synthetic else "real data")
+    print(f"\n{header}\n" + "-" * len(header))
 
     if args.synthetic:
         tracks, obs = build_synthetic()
-        fyear, title = 2020, "eReg MME — dominant tercile (synthetic)"
+        fyear, title = 2020, "eReg MME: dominant tercile (synthetic)"
     else:
         tracks, obs = build_real()
-        fyear, title = HINDCAST_YEARS[-1], f"eReg MME — dominant tercile (MAM {HINDCAST_YEARS[-1]}, ERA5/C3S)"
+        fyear, title = HINDCAST_YEARS[-1], f"eReg MME: dominant tercile (MAM {HINDCAST_YEARS[-1]}, ERA5/C3S)"
 
     # eReg is a calibrate-family method: per-model OLS calibration -> parametric
     # terciles -> cross-model average, via the calibrate() verb.

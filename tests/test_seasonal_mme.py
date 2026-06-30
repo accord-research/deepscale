@@ -255,3 +255,60 @@ def test_non_cca_uses_bootstrap_tercile():
     tracks, obs = _two_track_fixture()
     result = seasonal_mme(tracks, obs, method="bcsd", verbose=False)
     assert result.metadata["tercile_method"] == "bootstrap"
+
+
+def test_cpt_per_model_aggregation_normalized_and_recorded():
+    tracks, obs = _two_track_fixture()
+    result = seasonal_mme(
+        tracks, obs, method="cca", cv="loyo",
+        cpt_args={"n_modes": 2},
+        probability_aggregation="cpt_per_model",
+        verbose=False,
+    )
+    assert result.metadata["probability_aggregation"] == "cpt_per_model"
+    assert result.tercile_forecast.dims == ("tercile", "lat", "lon")
+    np.testing.assert_allclose(
+        result.tercile_forecast.sum("tercile").values, 1.0, atol=1e-6,
+    )
+
+
+def test_cpt_per_model_scores_against_matching_cv_terciles():
+    """The probabilistic skill report must be scored against CV terciles built
+    the same way as the published forecast. Under cpt_per_model the CV terciles
+    are the per-model-averaged CPT maps, not the pooled construction, so they
+    differ from the pooled-aggregation CV terciles."""
+    tracks, obs = _two_track_fixture()
+    pooled = seasonal_mme(
+        tracks, obs, method="cca", cv="loyo", cpt_args={"n_modes": 2},
+        probability_aggregation="pooled", verbose=False)
+    per_model = seasonal_mme(
+        tracks, obs, method="cca", cv="loyo", cpt_args={"n_modes": 2},
+        probability_aggregation="cpt_per_model", verbose=False)
+
+    assert "tercile" in per_model.tercile_cv.dims and "year" in per_model.tercile_cv.dims
+    np.testing.assert_allclose(
+        per_model.tercile_cv.sum("tercile").values, 1.0, atol=1e-6)
+    # The CV terciles reflect the chosen aggregation rather than always the
+    # pooled path: per-model-averaged != pooled-ensemble-mean construction.
+    assert not np.allclose(
+        pooled.tercile_cv.values, per_model.tercile_cv.values, atol=1e-9)
+
+
+def test_default_aggregation_is_pooled_and_unchanged():
+    tracks, obs = _two_track_fixture()
+    base = seasonal_mme(tracks, obs, method="cca", cv="loyo",
+                        cpt_args={"n_modes": 2}, verbose=False)
+    explicit = seasonal_mme(tracks, obs, method="cca", cv="loyo",
+                            cpt_args={"n_modes": 2},
+                            probability_aggregation="pooled", verbose=False)
+    assert base.metadata["probability_aggregation"] == "pooled"
+    np.testing.assert_allclose(
+        base.tercile_forecast.values, explicit.tercile_forecast.values, atol=1e-9,
+    )
+
+
+def test_invalid_aggregation_raises():
+    tracks, obs = _two_track_fixture()
+    with pytest.raises(ValueError, match="probability_aggregation"):
+        seasonal_mme(tracks, obs, method="cca",
+                     probability_aggregation="bogus", verbose=False)

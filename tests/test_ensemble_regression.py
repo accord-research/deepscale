@@ -89,6 +89,68 @@ def test_predict_tercile_sums_to_one_and_is_directional():
     assert float(t_wet.sel(tercile=0).mean()) < float(t.sel(tercile=0).mean())
 
 
+def test_predict_tercile_can_use_fitted_hindcast_thresholds():
+    hindcast, obs = _synthetic(obs_noise=5.0, mem_noise=0.0, n_lat=1, n_lon=1)
+    m = EnsembleRegressionMethod()
+    m.fit(hindcast, obs)
+
+    fcst = hindcast.isel(year=[-1])
+    obs_thresholds = m.predict_tercile(fcst, obs, threshold_source="obs")
+    fitted_thresholds = m.predict_tercile(fcst, obs, threshold_source="fitted")
+
+    assert not np.allclose(obs_thresholds, fitted_thresholds)
+    assert m.fitted_hindcast_.dims == ("year", "lat", "lon")
+
+
+def test_fitted_hindcast_is_lazy():
+    """fit() must not eagerly build the fitted hindcast: it is unused on the
+    default threshold_source='obs' path, so building it per fit/CV-fold is wasted
+    work. It is computed on first access and then cached."""
+    hindcast, obs = _synthetic()
+    m = EnsembleRegressionMethod()
+    m.fit(hindcast, obs)
+    assert m.__dict__.get("_fitted_hindcast_cache") is None  # not built by fit()
+    fitted = m.fitted_hindcast_                               # triggers compute
+    assert fitted.dims == ("year", "lat", "lon")
+    assert m.__dict__.get("_fitted_hindcast_cache") is not None  # cached
+
+
+def test_fitted_hindcast_thresholds_ignore_clip_negative():
+    """clip_negative is a deterministic-output floor; it must not distort the
+    'fitted' tercile boundaries by compressing the lower tail at zero. The
+    fitted-threshold hindcast is therefore the un-clipped calibrated hindcast."""
+    n = 24
+    years = np.arange(2000, 2000 + n)
+    x = np.linspace(-3.0, 3.0, n)
+    y = 2.0 * x + np.random.default_rng(0).normal(0, 0.1, n)  # calibrated fit spans <0
+    hind = xr.DataArray(
+        x[:, None, None, None], dims=["year", "member", "lat", "lon"],
+        coords={"year": years, "member": [0], "lat": [0], "lon": [0]},
+    )
+    obs = xr.DataArray(y[:, None, None], dims=["year", "lat", "lon"],
+                       coords={"year": years, "lat": [0], "lon": [0]})
+
+    clipped = EnsembleRegressionMethod(clip_negative=True).fit(hind, obs)
+    unclipped = EnsembleRegressionMethod(clip_negative=False).fit(hind, obs)
+
+    # The natural calibrated hindcast goes negative; the fitted-threshold source
+    # preserves that under clip_negative rather than flooring it to zero.
+    assert float(clipped.fitted_hindcast_.min()) < 0.0
+    np.testing.assert_allclose(
+        clipped.fitted_hindcast_.values, unclipped.fitted_hindcast_.values, atol=1e-12)
+    # The deterministic predict() still clips (unchanged behaviour).
+    assert float(clipped.predict(hind.isel(year=0)).min()) >= 0.0
+
+
+def test_predict_tercile_rejects_unknown_threshold_source():
+    hindcast, obs = _synthetic()
+    m = EnsembleRegressionMethod()
+    m.fit(hindcast, obs)
+
+    with pytest.raises(ValueError, match="threshold_source"):
+        m.predict_tercile(hindcast.isel(year=[-1]), obs, threshold_source="unknown")
+
+
 def test_predict_tercile_matches_prediction_error_variance_formula():
     """sigma^2 = pev * (1 + 1/n + (xf - xbar)^2 / Sxx) (Wilks 2006 eq 6.22),
     re-derived independently and checked against predict_tercile."""

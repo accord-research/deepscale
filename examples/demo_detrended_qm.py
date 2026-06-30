@@ -1,27 +1,20 @@
 """
-Demo: Detrended Quantile Mapping (#43, §19.2, Cannon et al. 2015).
+Demo: Detrended Quantile Mapping (Cannon et al. 2015).
 
 Contrasts DQM with plain QM on a strongly warming GCM (trend +0.5/yr) against a
 trendless obs record. Plain QM absorbs the trend into the CDF and maps the hot
 final year back down toward the obs range; DQM removes the trend before mapping
 and re-adds the GCM trend, preserving the warming signal.
 
-Network-free — synthetic data on a shared grid. Run from the repo root:
+Network-free - synthetic data on a shared grid. Run from the repo root:
 
     uv run python examples/demo_detrended_qm.py
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import xarray as xr
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from deepscale.methods.dqm import DetrendedQuantileMappingMethod  # noqa: E402
-from deepscale.methods.qm import QuantileMappingMethod  # noqa: E402
+import deepscale as ds
 
 
 def _data():
@@ -45,29 +38,23 @@ def _data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  DETRENDED QUANTILE MAPPING DEMO  (#43 §19.2)")
-    print("=" * 60)
+    header = "Detrended quantile mapping vs plain QM"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs = _data()
     forecast = gcm.isel(year=-1)  # the warmest year
 
-    print(f"\n    obs climatology mean    = {float(obs.mean()):.2f}  (no trend)")
-    print(f"    raw GCM final-year mean = {float(forecast.mean()):.2f}  (warmed)")
+    print(f"  obs climatology mean    = {float(obs.mean()):.2f}  (no trend)")
+    print(f"  raw GCM final-year mean = {float(forecast.mean()):.2f}  (warmed)")
 
-    qm = QuantileMappingMethod(variant="empirical"); qm.fit(gcm, obs)
-    dqm = DetrendedQuantileMappingMethod(variant="empirical"); dqm.fit(gcm, obs)
+    qm_out = float(ds.downscale(gcm, obs, method="qm", variant="empirical",
+                                forecast=forecast, verbose=False).mean())
+    dqm_out = float(ds.downscale(gcm, obs, method="dqm", variant="empirical",
+                                 forecast=forecast, verbose=False).mean())
 
-    qm_out = float(qm.predict(forecast).mean())
-    dqm_out = float(dqm.predict(forecast).mean())
-
-    print(f"\n    plain QM  output mean   = {qm_out:.2f}  (trend absorbed)")
-    print(f"    DQM       output mean   = {dqm_out:.2f}  (trend preserved)")
-    print(f"\n    -> DQM keeps {dqm_out - qm_out:+.2f} of warming signal QM discards.")
-
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print(f"\n  plain QM  output mean   = {qm_out:.2f}  (trend absorbed)")
+    print(f"  DQM       output mean   = {dqm_out:.2f}  (trend preserved)")
+    print(f"\n  -> DQM keeps {dqm_out - qm_out:+.2f} of warming signal QM discards.")
 
 
 if __name__ == "__main__":

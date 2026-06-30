@@ -9,40 +9,27 @@ Africa (the predictand) via Rosetta, builds a custom WVG index with
 a dominant-tercile PNG and NetCDF to examples/output/.
 
 Run from the repository root:
-  python examples/demo_logistic_wvg.py             # real data (needs CDS)
-  python examples/demo_logistic_wvg.py --synthetic # offline, deterministic, self-checking
+  uv run python examples/demo_logistic_wvg.py             # real data (needs CDS)
+  uv run python examples/demo_logistic_wvg.py --synthetic # offline, deterministic
 
-Prerequisites for the real-data path: Rosetta + DeepScale importable, CDS
-credentials in ~/.cdsapirc, accepted ERA5 licences. Missing credentials/network
-fail at the fetch step (a pre-existing requirement, not a bug). Use --synthetic
-offline.
+Prerequisites for the real-data path: CDS credentials in ~/.cdsapirc and accepted
+ERA5 licences. Missing credentials/network fail at the fetch step (a pre-existing
+requirement, not a bug). Use --synthetic offline.
 """
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
-
-
-def _configure_import_paths() -> Path:
-    repo_root = Path(__file__).resolve().parents[1]
-    for rel in ("rosetta/src", "../rosetta/src", "src"):
-        p = (repo_root / rel).resolve()
-        if p.exists():
-            sys.path.insert(0, str(p))
-    return repo_root
-
-
-REPO_ROOT = _configure_import_paths()
 
 import numpy as np
 import xarray as xr
 import deepscale as ds
+from deepscale.plotting import plot_tercile_forecast
 
 PACIFIC = [-20, 40, 120, 240]            # WVG boxes live here (0-360 lon)
 EAST_AFRICA = [-5, 5, 33, 48]
 HINDCAST_YEARS = list(range(2000, 2021))
-OUTPUT_DIR = REPO_ROOT / "examples" / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 CACHE_DIR = OUTPUT_DIR / "demo_cache"
 PNG = OUTPUT_DIR / "logistic_wvg_tercile.png"
 NC = OUTPUT_DIR / "logistic_wvg_tercile.nc"
@@ -112,131 +99,10 @@ def save_png(tercile, title):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        fig = _plot_tercile_map(tercile, title)
-        renderer = "cartopy"
-    except ImportError:
-        try:
-            fig = _plot_tercile_geopandas_map(tercile, title)
-            renderer = "geopandas"
-        except ImportError:
-            from deepscale.plotting import plot_tercile_forecast
-            fig, ax = plt.subplots(figsize=(7, 5))
-            plot_tercile_forecast(tercile, ax=ax, title=title)
-            renderer = "plain"
+    fig = plot_tercile_forecast(tercile, title=title)
     fig.savefig(PNG, dpi=130, bbox_inches="tight")
     plt.close(fig)
-    print(f"  saved {PNG} ({renderer} renderer)")
-
-
-def _tercile_rgb_and_extent(tercile):
-    probs = tercile.transpose("tercile", "lat", "lon").values
-    dom_cat = probs.argmax(axis=0)
-    dom_prob = probs.max(axis=0)
-    intensity = np.clip((dom_prob - 1 / 3) / 0.37, 0.0, 1.0)
-
-    rgb = np.ones(dom_cat.shape + (3,))
-    below = dom_cat == 0
-    normal = dom_cat == 1
-    above = dom_cat == 2
-    rgb[below] = np.stack([
-        np.ones(below.sum()),
-        1 - intensity[below],
-        1 - intensity[below],
-    ], axis=-1)
-    rgb[normal] = np.stack([
-        1 - 0.4 * intensity[normal],
-        1 - 0.4 * intensity[normal],
-        1 - 0.4 * intensity[normal],
-    ], axis=-1)
-    rgb[above] = np.stack([
-        1 - intensity[above],
-        1 - intensity[above],
-        np.ones(above.sum()),
-    ], axis=-1)
-
-    lon = tercile.lon.values
-    lat = tercile.lat.values
-    extent = [float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max())]
-    return rgb, extent
-
-
-def _legend_handles():
-    from matplotlib.patches import Patch
-
-    return [
-        Patch(facecolor="red", edgecolor="black", linewidth=0.5,
-              label="Below normal (drier)"),
-        Patch(facecolor="#999999", edgecolor="black", linewidth=0.5,
-              label="Normal"),
-        Patch(facecolor="blue", edgecolor="black", linewidth=0.5,
-              label="Above normal (wetter)"),
-    ]
-
-
-def _plot_tercile_map(tercile, title):
-    import matplotlib.pyplot as plt
-    import cartopy.crs as ccrs
-    import cartopy.feature as cfeature
-
-    rgb, extent = _tercile_rgb_and_extent(tercile)
-
-    fig = plt.figure(figsize=(8, 5.5))
-    ax = plt.axes(projection=ccrs.PlateCarree())
-    ax.set_extent(extent, crs=ccrs.PlateCarree())
-    ax.imshow(rgb, extent=extent, origin="lower", transform=ccrs.PlateCarree())
-    ax.add_feature(cfeature.LAND, facecolor="#f6f4ee", edgecolor="none", zorder=-2)
-    ax.add_feature(cfeature.OCEAN, facecolor="#eef6fb", edgecolor="none", zorder=-3)
-    ax.coastlines(resolution="50m", linewidth=0.8, color="#333333")
-    ax.add_feature(cfeature.BORDERS, linewidth=0.6, edgecolor="#555555")
-    gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="#777777", alpha=0.5)
-    gl.top_labels = False
-    gl.right_labels = False
-    ax.set_title(title)
-    ax.legend(
-        handles=_legend_handles(),
-        loc="lower right",
-        framealpha=0.92,
-        fontsize=8,
-        title="Dominant tercile",
-        title_fontsize=8,
-    )
-    return fig
-
-
-def _plot_tercile_geopandas_map(tercile, title):
-    import matplotlib.pyplot as plt
-    import geopandas as gpd
-
-    ne_root = Path.home() / ".local/share/cartopy/shapefiles/natural_earth"
-    coast_path = ne_root / "physical/ne_50m_coastline.shp"
-    borders_path = ne_root / "cultural/ne_50m_admin_0_boundary_lines_land.shp"
-    if not coast_path.exists() or not borders_path.exists():
-        raise ImportError("Natural Earth coastlines/borders are not cached.")
-
-    rgb, extent = _tercile_rgb_and_extent(tercile)
-    lon_w, lon_e, lat_s, lat_n = extent
-    fig, ax = plt.subplots(figsize=(8, 5.5))
-    ax.imshow(rgb, extent=extent, origin="lower", aspect="auto", zorder=1)
-    coast = gpd.read_file(coast_path).cx[lon_w:lon_e, lat_s:lat_n]
-    borders = gpd.read_file(borders_path).cx[lon_w:lon_e, lat_s:lat_n]
-    coast.plot(ax=ax, color="#222222", linewidth=0.8, zorder=3)
-    borders.plot(ax=ax, color="#555555", linewidth=0.6, zorder=4)
-    ax.set_xlim(lon_w, lon_e)
-    ax.set_ylim(lat_s, lat_n)
-    ax.set_xlabel("Longitude")
-    ax.set_ylabel("Latitude")
-    ax.grid(color="#777777", linewidth=0.3, alpha=0.5)
-    ax.set_title(title)
-    ax.legend(
-        handles=_legend_handles(),
-        loc="lower right",
-        framealpha=0.92,
-        fontsize=8,
-        title="Dominant tercile",
-        title_fontsize=8,
-    )
-    return fig
+    print(f"  saved {PNG}")
 
 
 def save_netcdf(tercile):
@@ -252,9 +118,8 @@ def main() -> int:
                     help="use offline synthetic data instead of fetching real data")
     args = ap.parse_args()
 
-    print("=" * 64)
-    print("  WVG / LOGISTIC — " + ("synthetic" if args.synthetic else "real data"))
-    print("=" * 64)
+    header = "WVG logistic calibration: " + ("synthetic" if args.synthetic else "real data")
+    print(f"\n{header}\n" + "-" * len(header))
 
     sst, obs = build_synthetic() if args.synthetic else build_real()
 
@@ -309,8 +174,8 @@ def main() -> int:
         print(f"  responsive P(below)={resp:.2f} vs noise={noise:.2f}")
     print("PASS: valid per-cell logistic tercile forecast")
 
-    save_png(p, f"WVG / logistic — dominant tercile ({fcst_year})"
-             if not args.synthetic else "WVG / logistic — dominant tercile (synthetic)")
+    save_png(p, f"WVG logistic: dominant tercile ({fcst_year})"
+             if not args.synthetic else "WVG logistic: dominant tercile (synthetic)")
     save_netcdf(p)
     print("\nWVG/logistic demo complete.")
     return 0

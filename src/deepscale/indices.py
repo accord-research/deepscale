@@ -118,15 +118,9 @@ class Index:
     # -- internals ---------------------------------------------------------
     @staticmethod
     def _spatial_dims(sst: xr.DataArray) -> tuple[str, str]:
-        lat = next((d for d in ("lat", "latitude", "Y", "y") if d in sst.dims), None)
-        lon = next((d for d in ("lon", "longitude", "X", "x") if d in sst.dims), None)
-        if lat is None or lon is None:
-            raise ValueError(
-                f"Index.reduce: could not find lat/lon dims on SST with dims "
-                f"{tuple(sst.dims)}; expected one of lat/latitude/Y and "
-                f"lon/longitude/X."
-            )
-        return lat, lon
+        from ._spatial import spatial_dims
+
+        return spatial_dims(sst, context="Index.reduce")
 
     @staticmethod
     def _resolve_region(region) -> tuple[list[float], object | None]:

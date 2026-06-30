@@ -160,6 +160,7 @@ class CCAMethod(MethodBase):
 
         self.n_train_ = n_years
         self.x_eof_modes_ = nxe
+        self.y_eof_modes_ = nye
         self.predictor_shape_ = gcm_mean.isel(year=0).shape
         self.predictor_coords_ = {"lat": gcm_mean.lat, "lon": gcm_mean.lon}
         self.predictand_shape_ = obs.isel(year=0).shape
@@ -254,8 +255,27 @@ class CCAMethod(MethodBase):
         )
 
 
-def select_modes(gcm, obs, years, window, x_eof_range=(1, 8), y_eof_range=(1, 6),
-                 cca_range=(1, 3)):
+def _capped_mode_ranges(x_eof_range, y_eof_range, cca_range, n_years, window):
+    """Cap the upper search bound by what the sample supports.
+
+    An EOF/CCA fit needs strictly fewer modes than training samples, and the
+    downstream CPT Student-t dof is ``n - modes - 1``. With ``window`` years held
+    out per CV fold, cap each range at ``n_years - window - 2`` (never below 1)
+    so auto-selection on a short hindcast can't pick a high-mode combo that
+    overfits or drives the dof to <= 1 (which silently drops the model). On a
+    long hindcast the cap is generous and the (1, 10) default is unaffected.
+    """
+    max_modes = max(1, n_years - max(window, 1) - 2)
+
+    def _cap(r):
+        lo, hi = r
+        return (min(lo, max_modes), min(hi, max_modes))
+
+    return _cap(x_eof_range), _cap(y_eof_range), _cap(cca_range)
+
+
+def select_modes(gcm, obs, years, window, x_eof_range=(1, 10), y_eof_range=(1, 10),
+                 cca_range=(1, 10), fallback_modes=None):
     """CPT-compatible mode auto-selection via cross-validated Kendall's tau.
 
     Matches CPT's cv_cca (cca.F95 L223-539) + goodness (scores.F95 L3589-3726):
@@ -263,9 +283,23 @@ def select_modes(gcm, obs, years, window, x_eof_range=(1, 8), y_eof_range=(1, 6)
     2. Compute average Kendall's tau across grid points for each combination
     3. Return the combination with highest goodness
 
+    The upper end of each range is capped by the sample size (see
+    ``_capped_mode_ranges``) so a short hindcast can't select a high-mode combo
+    that overfits or drives the downstream Student-t dof to <= 1. ``fallback_modes``
+    (x_eof, y_eof, cca) is returned when no combination yields a finite goodness
+    instead of raising, if supplied.
+
     Returns (best_x_eof, best_y_eof, best_cca, goodness_value, cv_predictions, leverages)
     """
     from ..cv import loyo
+
+    # Cap the search to what the sample size supports (short-hindcast guard).
+    capped = _capped_mode_ranges(x_eof_range, y_eof_range, cca_range, len(years), window)
+    if capped != (tuple(x_eof_range), tuple(y_eof_range), tuple(cca_range)):
+        print(f"  Mode selection: capping search ranges to sample size "
+              f"({len(years)} yrs, window={window}): "
+              f"x_eof={capped[0]}, y_eof={capped[1]}, cca={capped[2]}")
+    x_eof_range, y_eof_range, cca_range = capped
 
     # Enumerate all valid mode combinations
     combos = []
@@ -328,6 +362,21 @@ def select_modes(gcm, obs, years, window, x_eof_range=(1, 8), y_eof_range=(1, 6)
             if g > best_goodness:
                 best_goodness = g
                 best_idx = ci
+
+    if not np.isfinite(best_goodness):
+        if fallback_modes is None:
+            raise ValueError(
+                "CCA mode selection found no finite Kendall goodness value; "
+                "provide fallback_modes=(x_eof, y_eof, cca) to continue."
+            )
+        fallback_modes = tuple(fallback_modes)
+        if fallback_modes not in combos:
+            raise ValueError(
+                f"fallback_modes={fallback_modes} is outside searched mode "
+                f"combinations."
+            )
+        best_idx = combos.index(fallback_modes)
+        best_goodness = np.nan
 
     xe, ye, cc = combos[best_idx]
     print(f"  Optimal modes: x_eof={xe}, y_eof={ye}, cca={cc} (Kendall tau={best_goodness:+.4f})")

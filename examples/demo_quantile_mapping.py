@@ -1,26 +1,20 @@
 """
-Demo: Quantile Mapping bias correction + downscaling (#42, §19.1).
+Demo: Quantile Mapping bias correction + downscaling.
 
 Shows both variants correcting a deliberately biased GCM (mean 10, wide) toward
 the observed climatology (mean 5, narrow):
   - empirical : nonparametric CDF matching, F_obs^-1(F_gcm(x))
   - parametric: Gaussian z-score rescaling
 
-Network-free — synthetic data on a shared grid. Run from the repo root:
+Network-free: synthetic data on a shared grid. Run from the repo root:
 
     uv run python examples/demo_quantile_mapping.py
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import xarray as xr
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from deepscale.methods.qm import QuantileMappingMethod  # noqa: E402
+import deepscale as ds
 
 
 def _data():
@@ -42,30 +36,25 @@ def _data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  QUANTILE MAPPING DEMO  (#42 §19.1)")
-    print("=" * 60)
+    header = "Quantile mapping bias correction"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs = _data()
     forecast = gcm.isel(year=-1)
     obs_mean = float(obs.mean())
 
-    print(f"\n    obs climatology mean   = {obs_mean:.2f}")
-    print(f"    raw GCM forecast mean  = {float(forecast.mean()):.2f}  "
+    print(f"  obs climatology mean  = {obs_mean:.2f}")
+    print(f"  raw GCM forecast mean = {float(forecast.mean()):.2f}  "
           f"(bias {float(forecast.mean()) - obs_mean:+.2f})")
 
     for variant in ("empirical", "parametric"):
-        m = QuantileMappingMethod(variant=variant)
-        m.fit(gcm, obs)
-        out = m.predict(forecast)
+        out = ds.downscale(gcm, obs, method="qm", variant=variant,
+                           forecast=forecast, verbose=False)
         bias = float(out.mean()) - obs_mean
-        print(f"    {variant:10s} QM mean    = {float(out.mean()):.2f}  "
+        print(f"  {variant:10s} QM mean   = {float(out.mean()):.2f}  "
               f"(bias {bias:+.2f})")
 
-    print("\n    -> both variants pull the forecast onto the obs distribution.")
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\n  -> both variants pull the forecast onto the obs distribution.")
 
 
 if __name__ == "__main__":

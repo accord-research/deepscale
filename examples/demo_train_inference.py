@@ -1,34 +1,30 @@
 """
-Demo: train / inference separation (#27, §10.2).
+Demo: train / inference separation.
 
-Pattern for expensive (DL) methods — train once, checkpoint, then run inference
+Pattern for expensive (DL) methods - train once, checkpoint, then run inference
 any number of times without refitting:
 
-    deepscale.train(method, hindcast, obs, save_to=PATH)      # expensive, once
-    deepscale.downscale(forecast, method=method, weights_path=PATH)  # cheap, many
+    ds.train(method, hindcast, obs, save_to=PATH)            # expensive, once
+    ds.downscale(forecast, method=method, weights_path=PATH) # cheap, many
 
 Here we use CCA (cheap) to demonstrate the mechanics end-to-end, and show the
 guard that stops a `requires_training=True` method from being fit inline by
 `downscale()`.
 
-Network-free — synthetic data. Run from the repo root:
+Network-free - synthetic data. Run from the repo root:
 
     uv run python examples/demo_train_inference.py
 """
 from __future__ import annotations
 
-import sys
 import tempfile
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import deepscale  # noqa: E402
-from deepscale.methods.base import MethodBase  # noqa: E402
-from deepscale.registry import register_method  # noqa: E402
+import deepscale as ds
+from deepscale.methods.base import MethodBase
+from deepscale.registry import register_method
 
 
 @register_method("demo_dl_stub")
@@ -71,9 +67,8 @@ def _data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  TRAIN / INFERENCE SEPARATION DEMO  (#27 §10.2)")
-    print("=" * 60)
+    header = "Train / inference separation"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs = _data()
     forecast = gcm.isel(year=-1, drop=True)
@@ -82,7 +77,7 @@ def main() -> None:
         ckpt = Path(d) / "cca.pkl"
 
         print("\n[1] train() once -> checkpoint")
-        m = deepscale.train(
+        m = ds.train(
             "cca", gcm.isel(year=slice(None, -1)), obs.isel(year=slice(None, -1)),
             save_to=ckpt, n_modes=2, verbose=False,
         )
@@ -90,7 +85,7 @@ def main() -> None:
         print(f"    wrote {ckpt.name} ({ckpt.stat().st_size} bytes)")
 
         print("\n[2] downscale(weights_path=...) -> inference only, no refit")
-        result = deepscale.downscale(
+        result = ds.downscale(
             predictor_hindcast=forecast, method="cca",
             weights_path=str(ckpt), verbose=False,
         )
@@ -99,14 +94,12 @@ def main() -> None:
 
     print("\n[3] guard: a requires_training=True method can't be fit inline")
     try:
-        deepscale.downscale(gcm, obs, method="demo_dl_stub", verbose=False)
+        ds.downscale(gcm, obs, method="demo_dl_stub", verbose=False)
         print("    (unexpected: no error raised)")
     except RuntimeError as e:
         print(f"    RuntimeError -> {str(e)[:72]}...")
 
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\ntrain/inference demo complete.")
 
 
 if __name__ == "__main__":
