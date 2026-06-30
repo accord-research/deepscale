@@ -6,7 +6,7 @@ This example uses real CDS data via Rosetta:
   - C3S/ECMWF seasonal hindcasts (GCM)
 
 Run from the repository root:
-  python deepscale/examples/demo_forecast.py
+  uv run python examples/demo_forecast.py
 
 Prerequisites:
   1. Install Rosetta and DeepScale in local virtualenvs.
@@ -15,63 +15,51 @@ Prerequisites:
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 import xarray as xr
-
-
-def _configure_import_paths() -> Path:
-    """Allow running this example without requiring package installation."""
-    repo_root = Path(__file__).resolve().parents[2]
-    rosetta_src = repo_root / "rosetta" / "src"
-    deepscale_src = repo_root / "deepscale" / "src"
-    sys.path.insert(0, str(rosetta_src))
-    sys.path.insert(0, str(deepscale_src))
-    return repo_root
-
-
-REPO_ROOT = _configure_import_paths()
-
-import deepscale
-import rosetta
+import deepscale as ds
 from deepscale.cv import loyo
 from deepscale.tercile import to_tercile
+from deepscale.skill import SkillReport
+from deepscale.plotting import (
+    plot_domains, plot_deterministic_forecast,
+    plot_skill_maps, plot_tercile_forecast,
+    plot_reliability_diagram,
+)
 
 # Configuration
 REGION = [-5, 5, 33, 42]  # East Africa [lat_s, lat_n, lon_w, lon_e]
 HINDCAST_YEARS = list(range(2000, 2015))
 INIT_MONTH = "02"
 TARGET = "MAM"
-CACHE_DIR = REPO_ROOT / "deepscale" / "examples" / "output" / "demo_cache"
-PLOT_PATH = REPO_ROOT / "deepscale" / "examples" / "output" / "demo_forecast.png"
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+CACHE_DIR = OUTPUT_DIR / "demo_cache"
+PLOT_PATH = OUTPUT_DIR / "demo_forecast.png"
 VERBOSE = True
 PROGRESS = True
-
-os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 def load_or_fetch(cache_path: Path, fetch_fn):
     """Load cached dataset when present; otherwise fetch and cache."""
     if cache_path.exists():
         return xr.open_dataset(cache_path)
-    ds = fetch_fn()
-    ds.to_netcdf(cache_path)
-    return ds
+    dset = fetch_fn()
+    dset.to_netcdf(cache_path)
+    return dset
 
 
-def era5_to_obs(ds, target_months, years):
+def era5_to_obs(dset, target_months, years):
     """ERA5 monthly Dataset -> seasonal-mean obs DataArray (year, lat, lon)."""
-    da = ds["temp"]
+    da = dset["temp"]
     seasonal = da.sel(time=da.time.dt.month.isin(target_months))
     annual = seasonal.groupby("time.year").mean("time")
     return annual.sel(year=years)
 
 
-def seasonal_to_gcm(ds, years):
+def seasonal_to_gcm(dset, years):
     """C3S seasonal-monthly Dataset -> GCM DataArray (year, member, lat, lon)."""
-    da = ds["temp"]
+    da = dset["temp"]
     keep = {"lat", "lon", "time", "member", "year", "forecast_reference_time", "init_time"}
     for dim in list(da.dims):
         if dim not in keep:
@@ -87,10 +75,12 @@ def seasonal_to_gcm(ds, years):
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  SEASONAL TEMPERATURE FORECAST - East Africa MAM")
-    print("  (real CDS data via Rosetta + DeepScale)")
-    print("=" * 60)
+    import rosetta
+
+    header = "Seasonal temperature forecast: East Africa MAM (real CDS data via Rosetta + DeepScale)"
+    print(f"\n{header}\n" + "-" * len(header))
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\n[1] ERA5 monthly temperature...")
     era5_ds = load_or_fetch(
@@ -125,7 +115,7 @@ def main() -> None:
     print(f"    gcm  {dict(gcm.sizes)}  (~1 deg ECMWF SEAS5)")
 
     print("\n[3] Optimizing across methods (BCSD, CCA)...")
-    best = deepscale.optimize(
+    best = ds.optimize(
         gcm,
         obs,
         methods=["bcsd", "cca"],
@@ -149,7 +139,7 @@ def main() -> None:
     cv_forecasts_terc = []
     cv_forecasts_det = []
     for train_years, _test_year in loyo(HINDCAST_YEARS):
-        fitted = deepscale.optimize(
+        fitted = ds.optimize(
             gcm.sel(year=train_years),
             obs.sel(year=train_years),
             methods=[best.method],
@@ -166,7 +156,7 @@ def main() -> None:
 
     # Probabilistic metrics need the tercile forecast; RMSE needs the raw deterministic
     # ensemble (same units as obs). Two skill calls keep each metric on the right input.
-    report = deepscale.skill(
+    report = ds.skill(
         cv_fcst, obs,
         metrics=[
             "rpss", "pearson_r", "spearman", "hss",
@@ -175,25 +165,24 @@ def main() -> None:
         ],
         spatial=True,
     )
-    report_det = deepscale.skill(
+    report_det = ds.skill(
         cv_fcst_det, obs,
         metrics=["rmse", "spread_error_ratio", "spread_error_correlation"],
         spatial=True,
     )
 
-    print("\n" + "=" * 60)
-    print(f"  SKILL REPORT - ECMWF SEAS5 ({best.method.upper()})")
-    print("=" * 60)
+    skill_header = f"Skill report: ECMWF SEAS5 ({best.method.upper()})"
+    print(f"\n{skill_header}\n" + "-" * len(skill_header))
     for metric, value in report.scores.items():
         print(f"    {metric:20s}: {value:+.3f}")
     for metric, value in report_det.scores.items():
         print(f"    {metric:20s}: {value:+.3f}")
 
-    # ---- §22.3 PDF report (single-method) -----------------------------------
-    _pdf_output_dir = REPO_ROOT / "deepscale" / "examples" / "output"
-    os.makedirs(_pdf_output_dir, exist_ok=True)
+    # ---- PDF report (single-method) -----------------------------------------
+    _pdf_output_dir = OUTPUT_DIR
+    _pdf_output_dir.mkdir(parents=True, exist_ok=True)
     report.metadata = {
-        "region": "East Africa (5°S–5°N, 33–42°E)",
+        "region": "East Africa (5°S-5°N, 33-42°E)",
         "target": TARGET,
         "init": "February",
         "predictand": "2m air temperature",
@@ -208,14 +197,6 @@ def main() -> None:
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        from deepscale.skill import SkillReport
-        from deepscale.plotting import (
-            plot_domains, plot_deterministic_forecast,
-            plot_skill_maps, plot_tercile_forecast,
-            plot_reliability_diagram,
-        )
-
-        OUTPUT_DIR = PLOT_PATH.parent
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
         # 1. Domain map
@@ -232,7 +213,7 @@ def main() -> None:
         # 2. Climatology
         fig = plot_deterministic_forecast(
             obs.mean("year"),
-            title="Obs Climatology (ERA5 MAM mean)",
+            title="Obs climatology (ERA5 MAM mean)",
             cmap="inferno",
         )
         out = OUTPUT_DIR / "demo_climatology.png"
@@ -262,7 +243,7 @@ def main() -> None:
             tcst = tcst.isel(year=-1)
         fig = plot_tercile_forecast(
             tcst,
-            title=f"Dominant Tercile ({best.method.upper()}, {TARGET})",
+            title=f"Dominant tercile ({best.method.upper()}, {TARGET})",
             variable_kind="temp",
         )
         out = OUTPUT_DIR / "demo_tercile.png"
@@ -354,7 +335,7 @@ def main() -> None:
             f"ECMWF SEAS5 {best.method.upper()} | {HINDCAST_YEARS[0]}-{HINDCAST_YEARS[-1]} | Real CDS Data",
             fontsize=12, fontweight="bold",
         )
-        out = PLOT_PATH  # demo_forecast.png — preserves existing entry point
+        out = PLOT_PATH  # demo_forecast.png: preserves existing entry point
         fig.savefig(out, dpi=150, bbox_inches="tight")
         plt.close(fig)
         print(f"    Saved -> {out}")
@@ -362,9 +343,7 @@ def main() -> None:
     except ImportError:
         print("\n    (plotting deps not installed - skipping plots; install with `pip install deepscale[plotting]`)")
 
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\nseasonal-forecast demo complete.")
 
 
 if __name__ == "__main__":

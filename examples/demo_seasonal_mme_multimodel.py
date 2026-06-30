@@ -3,7 +3,7 @@ End-to-end demo: seasonal_mme() with a multi-track, multi-model MME.
 
 Demonstrates the realistic PyCPT-style use case where the orchestrator pools
 several per-(track, model) downscaling runs into one MME. This is the demo
-that actually exercises member-contribution diagnostics — the simpler
+that actually exercises member-contribution diagnostics - the simpler
 `demo_seasonal_mme.py` runs with a single track and single model, which
 makes the member-contributions page degenerate (one bar, one map).
 
@@ -12,12 +12,12 @@ predictor variables for each track (e.g. PRCP on a regional domain and SST
 on a tropical-ocean domain). To keep this demo self-contained on a single
 CDS fetch, we partition the SEAS5 ensemble's 25 members into four groups
 and treat them as four pseudo-"models", split across two pseudo-"tracks".
-The MME math is honest — four genuinely-different ensemble-mean predictors
-go through CCA and get pooled — but the labels `prcp` / `sst` are
+The MME math is honest - four genuinely-different ensemble-mean predictors
+go through CCA and get pooled - but the labels `prcp` / `sst` are
 illustrative, not physical.
 
 Run from the repository root:
-  python examples/demo_seasonal_mme_multimodel.py
+  uv run python examples/demo_seasonal_mme_multimodel.py
 
 Prerequisites:
   1. Install Rosetta and DeepScale in local virtualenvs.
@@ -28,63 +28,48 @@ If CDS credentials are absent the script fails at the fetch step.
 """
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
-
-def _configure_import_paths() -> Path:
-    """Allow running this example without requiring package installation."""
-    repo_root = Path(__file__).resolve().parents[1]
-    rosetta_src = repo_root / "rosetta" / "src"
-    deepscale_src = repo_root / "src"
-    sys.path.insert(0, str(rosetta_src))
-    sys.path.insert(0, str(deepscale_src))
-    return repo_root
-
-
-REPO_ROOT = _configure_import_paths()
-
 import xarray as xr
-import deepscale
+import deepscale as ds
 
 # ---------------------------------------------------------------------------
-# Configuration — mirrors demo_seasonal_mme.py for data-layer parity.
+# Configuration
 # ---------------------------------------------------------------------------
 REGION = [-5, 5, 33, 42]          # East Africa [lat_s, lat_n, lon_w, lon_e]
 HINDCAST_YEARS = list(range(2000, 2015))
 INIT_MONTH = "02"
 TARGET = "MAM"
-CACHE_DIR = REPO_ROOT / "examples" / "output" / "demo_cache"
-OUTPUT_DIR = REPO_ROOT / "examples" / "output"
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
+CACHE_DIR = OUTPUT_DIR / "demo_cache"
 VERBOSE = True
 PROGRESS = True
 
-os.makedirs(CACHE_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
-# Data helpers (identical to demo_seasonal_mme.py).
+# Data helpers
 # ---------------------------------------------------------------------------
 
 def _load_or_fetch(cache_path: Path, fetch_fn):
     if cache_path.exists():
         return xr.open_dataset(cache_path)
-    ds = fetch_fn()
-    ds.to_netcdf(cache_path)
-    return ds
+    dset = fetch_fn()
+    dset.to_netcdf(cache_path)
+    return dset
 
 
-def _era5_to_obs(ds, target_months, years):
-    da = ds["temp"]
+def _era5_to_obs(dset, target_months, years):
+    da = dset["temp"]
     seasonal = da.sel(time=da.time.dt.month.isin(target_months))
     annual = seasonal.groupby("time.year").mean("time")
     return annual.sel(year=years)
 
 
-def _seasonal_to_gcm(ds, years):
-    da = ds["temp"]
+def _seasonal_to_gcm(dset, years):
+    da = dset["temp"]
     keep = {"lat", "lon", "time", "member", "year", "forecast_reference_time", "init_time"}
     for dim in list(da.dims):
         if dim not in keep:
@@ -119,10 +104,8 @@ def _partition_members(gcm, n_groups):
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    print("=" * 60)
-    print("  SEASONAL MME DEMO (MULTI-TRACK, MULTI-MODEL)")
-    print("  East Africa MAM Temperature, real CDS data via Rosetta")
-    print("=" * 60)
+    header = "Seasonal MME (multi-track, multi-model): East Africa MAM temperature"
+    print(f"\n{header}\n" + "-" * len(header))
 
     print("\n[1] ERA5 monthly temperature...")
     try:
@@ -162,9 +145,7 @@ def main() -> None:
     gcm = _seasonal_to_gcm(gcm_ds, years=HINDCAST_YEARS)
     print(f"    gcm  {dict(gcm.sizes)}  (~1 deg ECMWF SEAS5, 25 members)")
 
-    # ------------------------------------------------------------------
-    # 3. Build a 2-track × 2-model `predictor_tracks` dict
-    # ------------------------------------------------------------------
+    # 3. Build a 2-track x 2-model `predictor_tracks` dict.
     # Split the 25-member ensemble into 4 disjoint subsets, then label them
     # across two pseudo-"tracks" of two pseudo-"models" each. The MME math
     # is honest; the track labels are illustrative. See module docstring.
@@ -186,11 +167,11 @@ def main() -> None:
         },
     }
 
-    print("\n[4] Running seasonal_mme(method='cca', cv='loyo') ...")
+    print("\n[4] Running seasonal_mme(method='cca', cv='loyo')...")
     print("    (this runs a LOYO CV loop for each of the 4 (track, model)")
-    print("    pairs — may take several minutes)")
+    print("    pairs - may take several minutes)")
 
-    result = deepscale.seasonal_mme(
+    result = ds.seasonal_mme(
         predictor_tracks,
         obs,
         method="cca",
@@ -198,26 +179,23 @@ def main() -> None:
         verbose=True,
     )
 
-    # ------------------------------------------------------------------
     # 5. Print headline outputs
-    # ------------------------------------------------------------------
-    print("\n" + "=" * 60)
-    print("  RESULTS")
-    print("=" * 60)
+    summary = "Results"
+    print(f"\n{summary}\n" + "-" * len(summary))
 
-    print(f"\n  Years used       : {result.metadata['years_used']}")
+    print(f"  Years used       : {result.metadata['years_used']}")
     print(f"  Forecast year    : {result.metadata['forecast_year']}")
     print(f"  CV scheme        : {result.metadata['cv']}")
     print(f"  Method           : {result.metadata['method']}")
     print(f"  Tercile method   : {result.metadata['tercile_method']}")
     print(f"  N members        : {result.metadata['n_members']}")
 
-    print("\n  --- Skill scores (domain mean) ---")
+    print("\n  Skill scores (domain mean):")
     for metric, value in result.skill_report.scores.items():
         if isinstance(value, (int, float)):
             print(f"    {metric:25s}: {value:+.4f}")
 
-    print("\n  --- Member contributions ---")
+    print("\n  Member contributions:")
     mc = result.ensemble_result.member_contributions
     if mc is None:
         print("    (not populated)")
@@ -233,17 +211,15 @@ def main() -> None:
     bn = float(result.tercile_forecast.sel(tercile=0).mean())
     nn = float(result.tercile_forecast.sel(tercile=1).mean())
     an = float(result.tercile_forecast.sel(tercile=2).mean())
-    print(f"\n  Headline probabilities (domain mean):")
+    print("\n  Headline probabilities (domain mean):")
     print(f"    P(below normal) : {bn:.1%}")
     print(f"    P(normal)       : {nn:.1%}")
     print(f"    P(above normal) : {an:.1%}")
 
-    # ------------------------------------------------------------------
     # 6. Save tercile_forecast + skill PDF
-    # ------------------------------------------------------------------
     nc_out = OUTPUT_DIR / "demo_seasonal_mme_multimodel_tercile.nc"
     result.tercile_forecast.to_netcdf(nc_out)
-    print(f"\n  Saved tercile_forecast -> {nc_out}")
+    print(f"\n  saved tercile_forecast -> {nc_out}")
 
     pdf_out = OUTPUT_DIR / "demo_seasonal_mme_multimodel_skill.pdf"
     result.skill_report.metadata = {
@@ -255,13 +231,11 @@ def main() -> None:
     }
     try:
         result.skill_report.to_pdf(pdf_out)
-        print(f"  Saved skill PDF     -> {pdf_out}")
+        print(f"  saved skill PDF     -> {pdf_out}")
     except Exception as exc:
         print(f"  (PDF export skipped: {exc})")
 
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\nmulti-model seasonal MME demo complete.")
 
 
 if __name__ == "__main__":

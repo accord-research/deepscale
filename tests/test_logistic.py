@@ -103,6 +103,30 @@ def test_significance_mask_drops_unrelated_cells():
     assert np.isnan(flat[1:]).sum() >= 6              # most noise cells dropped
 
 
+def test_labels_assign_tied_boundary_values_to_below_and_above():
+    """Values tied to the tercile boundaries must not all collapse into the
+    'normal' class. A dry cell with a mass of zeros at the lower boundary should
+    populate below-normal; a mass at the upper boundary should populate
+    above-normal."""
+    from deepscale.logistic import _labels_from_obs
+
+    # Lower-boundary mass: 12 zeros (dry) + 18 increasing positives over 30 yrs.
+    dry = np.concatenate([np.zeros(12), np.linspace(1.0, 18.0, 18)])
+    # Upper-boundary mass: 18 increasing values + 12 identical highs.
+    wet = np.concatenate([np.linspace(0.0, 17.0, 18), np.full(12, 100.0)])
+    obs_vals = np.stack([dry, wet], axis=1)  # (year=30, ncell=2)
+
+    labels, t33, t67 = _labels_from_obs(obs_vals)
+
+    # Dry cell: the zero mass sits at t33; it must land in below-normal (0),
+    # not be starved into normal.
+    assert (labels[:, 0] == 0).sum() > 0
+    # Wet cell: the high mass sits at t67; it must land in above-normal (2).
+    assert (labels[:, 1] == 2).sum() > 0
+    # All three classes should be representable across the two cells.
+    assert set(np.unique(labels[labels >= 0])) == {0, 1, 2}
+
+
 def test_index_length_mismatch_raises(index):
     obs = _make_obs(index, responsive_cells=range(9))
     with pytest.raises(ValueError, match="must match obs.year"):
@@ -130,3 +154,25 @@ def test_degenerate_label_uses_base_rate():
     p = logistic_forecast(idx, da, 0.0)
     # Probabilities still valid and sum to 1.
     np.testing.assert_allclose(p.sum("tercile").values, 1.0, atol=1e-9)
+
+
+def test_logit_detrend_kwarg_matches_manual_detrend():
+    import numpy as np, xarray as xr
+    from deepscale.calibrate import calibrate, _detrend_index
+    years = list(range(1993, 2021))
+    # trended index series + obs, two models
+    def series(slope, seed):
+        rng = np.random.default_rng(seed)
+        vals = slope*(np.array(years)-2006) + rng.normal(0,1,len(years))
+        return xr.DataArray(vals, dims="year", coords={"year": years})
+    obs = xr.DataArray(
+        np.random.default_rng(0).normal(0,1,(len(years),2,2)),
+        dims=("year","lat","lon"),
+        coords={"year": years, "lat":[0,1], "lon":[0,1]})
+    pred = {"A": series(0.1, 1), "B": series(-0.05, 2)}
+    fc   = {"A": xr.DataArray(2.5), "B": xr.DataArray(-1.0)}
+    via_kwarg = calibrate(pred, obs, method="logit", forecast=fc, detrend=True)
+    dp = {k: _detrend_index(v, fc[k])[0] for k, v in pred.items()}
+    df = {k: _detrend_index(v, fc[k])[1] for k, v in pred.items()}
+    manual = calibrate(dp, obs, method="logit", forecast=df)
+    xr.testing.assert_allclose(via_kwarg, manual)

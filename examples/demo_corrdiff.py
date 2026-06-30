@@ -12,29 +12,25 @@ Prerequisites:
   - torch, earth2studio, nvidia-physicsnemo installed
   - deepscale installed (pip install -e .)
 
-Usage:
-  python examples/demo_corrdiff.py
+Run from the repository root:
+  uv run python examples/demo_corrdiff.py
 
   # Or with options:
-  python examples/demo_corrdiff.py --region=east-africa --variable=t2m --n-samples=8
+  uv run python examples/demo_corrdiff.py --region=east-africa --variable=t2m --n-samples=8
 """
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
+import deepscale as ds
+from deepscale.methods.corrdiff import CorrDiffMethod, _to_numpy
 
-# Allow running without package install
-_REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO / "src"))
-
-import deepscale  # noqa: E402
+OUTPUT_DIR = Path(__file__).resolve().parent / "output"
 
 # ---------------------------------------------------------------------------
 # Region presets
@@ -53,7 +49,7 @@ def parse_args():
     p.add_argument("--variable", default="t2m", help="CorrDiff output variable")
     p.add_argument("--n-samples", type=int, default=8, help="CorrDiff ensemble size")
     p.add_argument("--date", default="2015-06-15", help="Target date (YYYY-MM-DD)")
-    p.add_argument("--output-dir", default=str(_REPO / "examples" / "output"))
+    p.add_argument("--output-dir", default=str(OUTPUT_DIR))
     p.add_argument("--no-plot", action="store_true")
     return p.parse_args()
 
@@ -62,12 +58,11 @@ def build_synthetic_cmip6_input(model, target_date, region):
     """Build CorrDiff input from ERA5 data via earth2studio's data API.
 
     For a real comparison you'd use actual CMIP6 data. Here we use ERA5
-    coarsened to the CMIP6 grid as a proxy — this tests the full pipeline
+    coarsened to the CMIP6 grid as a proxy: this tests the full pipeline
     and produces meaningful spatial patterns, though the CorrDiff output
     won't be a true CMIP6 downscaling.
     """
     import torch
-    from deepscale.methods.corrdiff import _to_numpy
 
     input_vars = list(model.input_variables)
     ic = model.input_coords()
@@ -109,7 +104,6 @@ def run_corrdiff(args, region_cfg):
     """Load and run CorrDiff on the target date/region."""
     import torch
     from earth2studio.models.dx import CorrDiffCMIP6
-    from deepscale.methods.corrdiff import CorrDiffMethod, _to_numpy
 
     print("\n[1] Loading CorrDiff model...")
     t0 = time.time()
@@ -211,7 +205,7 @@ def run_bcsd_comparison(args, region_cfg):
                 "lat": gcm_lat, "lon": gcm_lon},
     )
 
-    result = deepscale.downscale(gcm, obs, method="bcsd", verbose=False)
+    result = ds.downscale(gcm, obs, method="bcsd", verbose=False)
     print(f"    BCSD output shape: {dict(result.sizes)}")
     return result, obs
 
@@ -223,7 +217,7 @@ def plot_comparison(corrdiff_result, bcsd_result, obs, args, region_cfg):
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print("    (matplotlib not installed — skipping plot)")
+        print("    (matplotlib not installed - skipping plot)")
         return
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -255,7 +249,7 @@ def plot_comparison(corrdiff_result, bcsd_result, obs, args, region_cfg):
     ax = axes[1, 1]
     im = ax.pcolormesh(obs_mean.lon, obs_mean.lat, obs_mean.values,
                        cmap="RdYlBu_r")
-    ax.set_title("Obs Climatology (synthetic)")
+    ax.set_title("Obs climatology (synthetic)")
     plt.colorbar(im, ax=ax, fraction=0.046)
 
     for ax in axes.flat:
@@ -263,7 +257,7 @@ def plot_comparison(corrdiff_result, bcsd_result, obs, args, region_cfg):
         ax.set_ylabel("Latitude")
 
     fig.suptitle(
-        f"CorrDiff vs BCSD — {region_cfg['label']} — {args.date}\n"
+        f"CorrDiff vs BCSD - {region_cfg['label']} - {args.date}\n"
         f"Variable: {args.variable} | Note: using synthetic input data",
         fontsize=13, fontweight="bold",
     )
@@ -273,18 +267,17 @@ def plot_comparison(corrdiff_result, bcsd_result, obs, args, region_cfg):
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "demo_corrdiff.png"
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
-    print(f"\n    Saved plot -> {out_path}")
+    print(f"\n    saved plot -> {out_path}")
 
 
 def main():
     args = parse_args()
     region_cfg = REGIONS[args.region]
 
-    print("=" * 60)
-    print(f"  CorrDiff vs BCSD — {region_cfg['label']}")
+    header = f"CorrDiff vs BCSD: {region_cfg['label']}"
+    print(f"\n{header}\n" + "-" * len(header))
     print(f"  Date: {args.date} | Variable: {args.variable}")
     print(f"  Ensemble size: {args.n_samples}")
-    print("=" * 60)
 
     # Run CorrDiff
     corrdiff_result = run_corrdiff(args, region_cfg)
@@ -293,9 +286,8 @@ def main():
     bcsd_result, obs = run_bcsd_comparison(args, region_cfg)
 
     # Summary stats
-    print("\n" + "=" * 60)
-    print("  COMPARISON SUMMARY")
-    print("=" * 60)
+    summary = "Comparison summary"
+    print(f"\n{summary}\n" + "-" * len(summary))
     cd_mean = corrdiff_result.mean("member")
     cd_std = corrdiff_result.std("member")
     bcsd_mean = bcsd_result.mean("member")
@@ -308,7 +300,7 @@ def main():
     if not args.no_plot:
         plot_comparison(corrdiff_result, bcsd_result, obs, args, region_cfg)
 
-    print("\n  DONE")
+    print("\nCorrDiff demo complete.")
 
 
 if __name__ == "__main__":

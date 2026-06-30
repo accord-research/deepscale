@@ -136,13 +136,17 @@ def _probability_simplex_or_nan(probs: xr.DataArray) -> xr.DataArray:
     return xr.where(valid, probs / total, np.nan)
 
 
-def _detrend_index(index: xr.DataArray, forecast_index: xr.DataArray):
+def _detrend_index(index: xr.DataArray, forecast_index, forecast_year=None):
     """Remove a linear trend from hindcast and forecast index values.
 
     The trend is fitted over the hindcast index using the ``year`` coordinate
     when present, otherwise positional years. The forecast value is adjusted by
-    the same fitted line at its own year, or one step after the hindcast period
-    when the forecast has no year coordinate.
+    the same fitted line at its forecast year, resolved in priority order:
+    an explicit ``forecast_year``; else the ``forecast_index``'s own ``year``
+    coordinate; else one step after the hindcast period. The explicit argument
+    matters for a bare-scalar forecast index (no year coordinate), where the
+    one-step fallback would otherwise silently evaluate the trend at the wrong
+    year whenever the real forecast year is not ``years[-1] + 1``.
     """
     x = np.asarray(index, dtype=float).reshape(-1)
     if "year" in index.coords:
@@ -160,7 +164,9 @@ def _detrend_index(index: xr.DataArray, forecast_index: xr.DataArray):
     )
     detrended = index - trend
 
-    if isinstance(forecast_index, xr.DataArray) and "year" in forecast_index.coords:
+    if forecast_year is not None:
+        fyear = float(forecast_year)
+    elif isinstance(forecast_index, xr.DataArray) and "year" in forecast_index.coords:
         fyear = float(np.asarray(forecast_index["year"].values).reshape(-1)[0])
     else:
         fyear = float(years[-1] + 1.0)
@@ -276,6 +282,15 @@ def _select_single_forecast(forecast, forecast_year, *, context: str):
     return forecast
 
 
+def _select_forecast_year_slice(source, forecast_year):
+    """Return the single-year forecast slice from ``source`` for ``forecast_year``,
+    whether ``year`` is a dimension to index into or must be attached to a
+    year-less field. Shared by the ereg forecast-input resolution paths."""
+    if "year" in source.dims:
+        return source.sel(year=[forecast_year])
+    return source.expand_dims(year=[forecast_year])
+
+
 def _split_ereg_predictor(predictor, forecast):
     """Return {model: (hindcast, forecast)} from pair or alias-style inputs."""
     predictors = _as_model_dict(predictor)
@@ -371,7 +386,8 @@ def _common_obs_hindcast_years(hcst, obs, *, name):
 
 @register_calibrator("ereg")
 def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
-                    combine="mean", clip_negative=False, verbose=False, **_):
+                    combine="mean", clip_negative=False, threshold_source="obs",
+                    verbose=False, **_):
     """eReg calibration: per-model OLS(obs ~ ens-mean) → parametric terciles →
     cross-model average. Each model's predictor is ``(hindcast, forecast)`` with
     the GCM already on the obs grid. ``forecast_year`` selects the year; with no
@@ -387,11 +403,9 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
         years = _common_obs_hindcast_years(hcst, obs, name=name)
         m = EnsembleRegressionMethod(clip_negative=clip_negative)
         m.fit(hcst.sel(year=years), obs.sel(year=years))
-        if fcst is not None:
-            fc = fcst.sel(year=[forecast_year]) if "year" in fcst.dims else fcst.expand_dims(year=[forecast_year])
-        else:
-            fc = hcst.sel(year=[forecast_year])
-        maps[name] = m.predict_tercile(fc, obs)
+        fc = _select_forecast_year_slice(
+            fcst if fcst is not None else hcst, forecast_year)
+        maps[name] = m.predict_tercile(fc, obs, threshold_source=threshold_source)
         if verbose:
             print(f"[calibrate:ereg] {name}: calibrated")
     out = _combine_models(maps, combine)
@@ -403,7 +417,7 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
 def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
                      combine="mean", model="icpac_independent", backend="sklearn",
                      regularization=None, significance_mask=None, min_years=10,
-                     verbose=False, **_):
+                     detrend: bool = False, verbose=False, **_):
     """Logistic calibration: per-model per-cell logistic of tercile occurrence on
     a scalar index → cross-model average. ``predictor`` is ``{model: index}`` and
     ``forecast`` the matching ``{model: index_value}`` (or single values)."""
@@ -426,6 +440,9 @@ def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
     for name, index in idx.items():
         _require_single_value(fc[name], f"calibrate(method='logit') forecast for model {name!r}")
         fval = float(np.asarray(fc[name]).reshape(-1)[0])
+        if detrend:
+            index, fval = _detrend_index(index, fc[name], forecast_year=forecast_year)
+            fval = float(np.asarray(fval).reshape(-1)[0])
         maps[name] = logistic_forecast(
             index, obs, fval, model=model, backend=backend,
             regularization=regularization, significance_mask=significance_mask,

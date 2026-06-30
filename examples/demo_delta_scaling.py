@@ -1,25 +1,19 @@
 """
-Demo: Delta scaling (#48, §19.7, Hay et al. 2000).
+Demo: Delta scaling (Hay et al. 2000).
 
 The simplest baseline: prediction = obs_clim + (GCM forecast - GCM hist clim).
 The GCM's *absolute* bias (mean ~12 here vs obs ~5) cancels out; only its
 anomaly is kept and laid on top of the observed climatology.
 
-Network-free — synthetic data on a shared grid. Run from the repo root:
+Network-free - synthetic data on a shared grid. Run from the repo root:
 
     uv run python examples/demo_delta_scaling.py
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import xarray as xr
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from deepscale.methods.delta import DeltaScalingMethod  # noqa: E402
+import deepscale as ds
 
 
 def _data():
@@ -41,28 +35,21 @@ def _data():
 
 
 def main() -> None:
-    print("=" * 60)
-    print("  DELTA SCALING DEMO  (#48 §19.7)")
-    print("=" * 60)
+    header = "Delta scaling baseline"
+    print(f"\n{header}\n" + "-" * len(header))
 
     gcm, obs = _data()
     forecast = gcm.isel(year=-1)
 
-    m = DeltaScalingMethod()
-    m.fit(gcm, obs)
-    out = m.predict(forecast)
+    out = ds.downscale(gcm, obs, method="delta", forecast=forecast, verbose=False)
 
     raw_anom = float(forecast.mean()) - float(gcm.mean(["member", "year"]).mean())
-    print(f"\n    obs climatology mean      = {float(obs.mean()):.2f}")
-    print(f"    raw GCM forecast mean     = {float(forecast.mean()):.2f}  (biased high)")
-    print(f"    GCM anomaly vs hist clim  = {raw_anom:+.2f}")
-    print(f"    delta-scaled output mean  = {float(out.mean()):.2f}  "
+    print(f"  obs climatology mean      = {float(obs.mean()):.2f}")
+    print(f"  raw GCM forecast mean     = {float(forecast.mean()):.2f}  (biased high)")
+    print(f"  GCM anomaly vs hist clim  = {raw_anom:+.2f}")
+    print(f"  delta-scaled output mean  = {float(out.mean()):.2f}  "
           f"(obs clim + GCM anomaly)")
-    print("\n    -> GCM's absolute bias drops out; only its anomaly survives.")
-
-    print("\n" + "=" * 60)
-    print("  DONE")
-    print("=" * 60)
+    print("\n  -> GCM's absolute bias drops out; only its anomaly survives.")
 
 
 if __name__ == "__main__":

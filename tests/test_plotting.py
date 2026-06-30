@@ -79,6 +79,66 @@ def test_plot_tercile_forecast_smoke():
     plt.close(fig)
 
 
+def test_tercile_rgb_leaves_masked_cells_blank():
+    """NaN-masked cells (significance mask / uncalibratable) must render blank
+    (white), not be painted into a confident below/above category, and must not
+    leak NaN into the RGB image."""
+    from deepscale.plotting.forecasts import _tercile_rgb
+
+    probs = np.full((3, 1, 2), np.nan)
+    probs[:, 0, 0] = [0.7, 0.2, 0.1]          # confident below-normal (cat 0)
+    # cell (0, 1) stays all-NaN -> masked / no valid forecast
+
+    rgb = _tercile_rgb(probs, red_cat=0, blue_cat=2)
+
+    np.testing.assert_array_equal(rgb[0, 1], [1.0, 1.0, 1.0])   # blank, not red
+    assert rgb[0, 0, 0] == 1.0 and rgb[0, 0, 1] < 1.0           # valid cell is red
+    assert np.isfinite(rgb).all()                               # no NaN pixels
+
+
+def test_plot_tercile_forecast_accepts_latitude_longitude_dims():
+    """calibrate()/logistic_forecast() preserve obs dim names; a (tercile,
+    latitude, longitude) forecast must plot without a transpose/attr error."""
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_tercile_forecast
+
+    n_lat, n_lon = 4, 5
+    probs = np.full((3, n_lat, n_lon), 1.0 / 3.0)
+    pr = xr.DataArray(
+        probs,
+        dims=["tercile", "latitude", "longitude"],
+        coords={
+            "tercile": [0, 1, 2],
+            "latitude": np.linspace(-5, 5, n_lat),
+            "longitude": np.linspace(30, 45, n_lon),
+        },
+    )
+    fig = plot_tercile_forecast(pr)
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_to_0_360_shifts_western_hemisphere_geometry():
+    """The geopandas basemap fallback must shift -180..180 shapefile geometries
+    into the 0-360 convention so coastlines align with 0-360 forecast grids."""
+    pytest.importorskip("geopandas")
+    pytest.importorskip("shapely")
+    import geopandas as gpd
+    from shapely.geometry import LineString
+
+    from deepscale.plotting.forecasts import _to_0_360
+
+    west = LineString([(-100.0, 0.0), (-90.0, 10.0)])   # western hemisphere
+    east = LineString([(30.0, 0.0), (40.0, 10.0)])       # eastern hemisphere
+    gdf = gpd.GeoDataFrame(geometry=[west, east])
+
+    shifted = _to_0_360(gdf)
+
+    assert shifted.geometry.iloc[0].bounds[0] >= 180.0   # west moved into 0-360
+    assert shifted.geometry.iloc[1].bounds[0] == 30.0    # east left untouched
+
+
 def test_plot_deterministic_forecast_smoke():
     pytest.importorskip("matplotlib")
     import matplotlib.pyplot as plt

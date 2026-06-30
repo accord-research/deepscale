@@ -25,6 +25,51 @@ import xarray as xr
 from scipy.stats import norm, t as t_dist
 
 
+def _cpt_tercile_probs(loc, t33, t67, dofr, pesd):
+    """CPT Student-t below/normal/above probabilities for one forecast field.
+
+    ``loc``/``t33``/``t67``/``pesd`` are same-shape numpy arrays; ``dofr`` is the
+    residual degrees of freedom. NaN in any input propagates to NaN across all
+    three categories. This is the single CPT tercile kernel shared by the CV
+    path (`_tercile_cpt`) and the production per-model path (`cpt_tercile_forecast`).
+    """
+    p_bn = t_dist.cdf(t33, df=dofr, loc=loc, scale=pesd)
+    p_an = t_dist.sf(t67, df=dofr, loc=loc, scale=pesd)
+    p_nn = 1.0 - p_bn - p_an
+    nan_mask = np.isnan(loc) | np.isnan(t33) | np.isnan(t67) | np.isnan(pesd)
+    if nan_mask.any():
+        p_bn[nan_mask] = np.nan
+        p_nn[nan_mask] = np.nan
+        p_an[nan_mask] = np.nan
+    return p_bn, p_nn, p_an
+
+
+def cpt_tercile_forecast(forecast, t33, t67, s2, dofr, leverage=0.0):
+    """CPT-style Student-t tercile probabilities for a single forecast map.
+
+    ``forecast``, ``t33``, ``t67`` and ``s2`` are DataArrays on the same grid;
+    the boundary/PEV arrays are aligned to ``forecast``'s dim order before the
+    (numpy) Student-t evaluation, so a transposed input can't mismap
+    probabilities onto the wrong cells. ``s2`` is the unbiased PEV; the scale is
+    ``sqrt(s2 * (1 + leverage))`` (leverage-inflated, Wilks 2006 / CPT). Returns
+    ``(tercile, *spatial)`` probabilities.
+    """
+    spatial = list(forecast.dims)
+    t33 = t33.transpose(*spatial)
+    t67 = t67.transpose(*spatial)
+    s2 = s2.transpose(*spatial)
+    pesd = np.sqrt(np.maximum(s2.values * (1.0 + leverage), 1e-24))
+    p_bn, p_nn, p_an = _cpt_tercile_probs(
+        forecast.values, t33.values, t67.values, dofr, pesd)
+    out = xr.concat(
+        [xr.DataArray(p_bn, dims=spatial, coords=forecast.coords),
+         xr.DataArray(p_nn, dims=spatial, coords=forecast.coords),
+         xr.DataArray(p_an, dims=spatial, coords=forecast.coords)],
+        dim=xr.IndexVariable("tercile", [0, 1, 2]),
+    )
+    return out
+
+
 def to_tercile(forecast, obs_climatology, method="counting"):
     """Convert a single-year ensemble forecast into tercile probabilities.
 
@@ -139,15 +184,8 @@ def _tercile_cpt(cv_predictions, obs, residuals, n, leverages, n_modes=3,
         h_i = leverages[i] if leverages is not None else 0.0
         pesd = np.sqrt(np.maximum(s2 * (1 + h_i), 1e-24))
 
-        p_bn_vals = t_dist.cdf(t33.values, df=dofr, loc=loc, scale=pesd)
-        p_an_vals = t_dist.sf(t67.values, df=dofr, loc=loc, scale=pesd)
-        p_nn_vals = 1.0 - p_bn_vals - p_an_vals
-
-        nan_mask = np.isnan(t33.values) | np.isnan(loc) | np.isnan(pesd)
-        if nan_mask.any():
-            p_bn_vals[nan_mask] = np.nan
-            p_nn_vals[nan_mask] = np.nan
-            p_an_vals[nan_mask] = np.nan
+        p_bn_vals, p_nn_vals, p_an_vals = _cpt_tercile_probs(
+            loc, t33.values, t67.values, dofr, pesd)
 
         spatial_dims = [d for d in pred.dims if d != "year"]
         spatial_coords = {k: v for k, v in pred.coords.items() if k != "year"}

@@ -15,7 +15,7 @@ from ..cv import get_cv
 from ..ensemble import EnsembleResult, ensemble
 from ..registry import get_method
 from ..skill import SkillReport, skill
-from ..tercile import to_tercile_cv, to_tercile
+from ..tercile import to_tercile_cv, to_tercile, cpt_tercile_forecast
 
 _PROBABILISTIC_METHODS = frozenset({"corrdiff"})
 
@@ -44,6 +44,7 @@ def seasonal_mme(
     cpt_args: dict | None = None,
     skill_metrics=None,
     tercile_method: str | None = None,
+    probability_aggregation: str = "pooled",
     forecast_year: int | None = None,
     optimize_ensemble: bool = False,
     primary_metric: str = "rpss",
@@ -70,6 +71,16 @@ def seasonal_mme(
         raise NotImplementedError(
             f"seasonal_mme V1 supports deterministic methods only; method "
             f"{method!r} produces samples. Track this in the V2 roadmap."
+        )
+    if probability_aggregation not in ("pooled", "cpt_per_model"):
+        raise ValueError(
+            "probability_aggregation must be 'pooled' or 'cpt_per_model'; "
+            f"got {probability_aggregation!r}."
+        )
+    if probability_aggregation == "cpt_per_model" and method != "cca":
+        raise ValueError(
+            "probability_aggregation='cpt_per_model' requires method='cca' "
+            f"(the per-model Student-t/leverage path); got method={method!r}."
         )
 
     years = _intersect_years(predictor_tracks, obs)
@@ -107,26 +118,38 @@ def seasonal_mme(
         cv=cv,
     )
 
-    tercile_kwargs = {}
-    if resolved_tercile_method == "cpt":
-        if not per_model_leverages:
-            raise ValueError(
-                "seasonal_mme: tercile_method='cpt' but no per-model leverages "
-                "were collected; was a non-CCA method used?"
-            )
-        # Average leverages across (track, model) per year. Leverage is a
-        # per-year scalar; averaging gives an MME-level leverage estimate.
-        n_models = len(per_model_leverages)
-        levs = [sum(vals) / n_models
-                for vals in zip(*per_model_leverages.values())]
-        tercile_kwargs["leverages"] = levs
-        tercile_kwargs["n_modes"] = (cpt_args or {}).get("n_modes", 3)
+    # tercile_cv is what the probabilistic skill report is scored against, so it
+    # must be built the same way as the published tercile_forecast. Under
+    # cpt_per_model that is the per-model-averaged CPT construction, not the
+    # pooled one — otherwise the reported RPSS/ROC characterize a different
+    # forecast than the one returned.
+    if probability_aggregation == "cpt_per_model":
+        tercile_cv = _cpt_per_model_tercile_cv(
+            per_model_cv_hindcasts, per_model_methods, per_model_leverages,
+            obs_sliced, fallback_forecast=ensemble_result.forecast,
+            fallback_method=resolved_tercile_method,
+        )
+    else:
+        tercile_kwargs = {}
+        if resolved_tercile_method == "cpt":
+            if not per_model_leverages:
+                raise ValueError(
+                    "seasonal_mme: tercile_method='cpt' but no per-model leverages "
+                    "were collected; was a non-CCA method used?"
+                )
+            # Average leverages across (track, model) per year. Leverage is a
+            # per-year scalar; averaging gives an MME-level leverage estimate.
+            n_models = len(per_model_leverages)
+            levs = [sum(vals) / n_models
+                    for vals in zip(*per_model_leverages.values())]
+            tercile_kwargs["leverages"] = levs
+            tercile_kwargs["n_modes"] = (cpt_args or {}).get("n_modes", 3)
 
-    tercile_cv = to_tercile_cv(
-        ensemble_result.forecast, obs_sliced,
-        method=resolved_tercile_method,
-        **tercile_kwargs,
-    )
+        tercile_cv = to_tercile_cv(
+            ensemble_result.forecast, obs_sliced,
+            method=resolved_tercile_method,
+            **tercile_kwargs,
+        )
 
     # Skill is scored against two forecast shapes:
     #   - deterministic ensemble mean → deterministic metrics
@@ -174,26 +197,77 @@ def seasonal_mme(
     if ensemble_result.member_contributions is not None:
         skill_report.diagrams["member_contributions"] = ensemble_result.member_contributions
 
-    # Build a single-year MME forecast (member dim = each per-model forecast).
-    forecast_members = xr.concat(
-        list(per_model_forecasts.values()),
-        dim=xr.DataArray(
-            [f"{t}__{m}" for (t, m) in per_model_forecasts.keys()],
-            dims="member",
-            name="member",
-        ),
-    )
+    # Build the single-year MME tercile forecast. Two aggregation models:
+    #   - "pooled" (default): pool per-model forecasts as ensemble members and
+    #     convert the spread to terciles (today's behavior, unchanged).
+    #   - "cpt_per_model": compute CPT-style per-model Student-t tercile
+    #     probabilities and average the per-model probability maps.
+    if probability_aggregation == "cpt_per_model":
+        # CPT-style per-model tercile probabilities, averaged across models.
+        # Student-t with leverage-inflated prediction-error variance (the shared
+        # `cpt_tercile_forecast` kernel — same math the CV path uses). Boundaries
+        # use the CPT convention (`_cpt_boundaries`), matching the per-model
+        # tercile_cv built above so the forecast and its skill report agree.
+        t33, t67 = _cpt_spatial_boundaries(obs_sliced)
+        per_model_maps = []
+        for key, cv_pred in per_model_cv_hindcasts.items():
+            track_name, model_name = key
+            m = per_model_methods[key]
+            fc_pred = per_model_forecasts[key]
+            n_modes = int(getattr(m, "x_eof_modes_", getattr(m, "n_modes", 3)))
+            dof = len(years) - n_modes - 1
+            if dof <= 1:
+                continue
+            # Forecast predictor for this model = the input track's forecast
+            # field. When no forecast slice was supplied (fcst is None), the
+            # forecast year lives inside the hindcast, mirroring _per_model_cv's
+            # forecast-input resolution. The real ICPAC pipeline always supplies
+            # a forecast slice, so that branch reproduces the lifted math exactly.
+            hcst_predictor, fcst_predictor = predictor_tracks[track_name][model_name]
+            if fcst_predictor is None:
+                fcst_predictor = hcst_predictor.sel(year=[resolved_forecast_year])
+            elif "year" in fcst_predictor.dims:
+                fcst_predictor = fcst_predictor.sel(year=[resolved_forecast_year])
+            leverage = m.leverage(fcst_predictor)
+            if not np.isfinite(leverage):
+                leverage = 0.0
+            s2 = ((cv_pred - obs_sliced) ** 2).sum("year") / dof
+            per_model_maps.append(
+                cpt_tercile_forecast(fc_pred, t33, t67, s2, dofr=dof, leverage=leverage))
+        if not per_model_maps:
+            raise RuntimeError(
+                "probability_aggregation='cpt_per_model': no per-model CPT "
+                "probability maps could be computed (dof<=1 for all models)."
+            )
+        out = xr.concat(per_model_maps, dim="model").mean("model", skipna=True)
+        total = out.sum("tercile", skipna=False)
+        tercile_forecast = xr.where(
+            np.isfinite(total) & (total > 0), out / total, np.nan)
+        # Match the pooled path's canonical (tercile, lat, lon) dim ordering.
+        tercile_forecast = tercile_forecast.transpose("tercile", ...)
+        forecast_mean = xr.concat(
+            list(per_model_forecasts.values()), dim="model").mean("model")
+    else:
+        # Build a single-year MME forecast (member dim = each per-model forecast).
+        forecast_members = xr.concat(
+            list(per_model_forecasts.values()),
+            dim=xr.DataArray(
+                [f"{t}__{m}" for (t, m) in per_model_forecasts.keys()],
+                dims="member",
+                name="member",
+            ),
+        )
 
-    # `to_tercile` produces (tercile, lat, lon) probabilities using member-
-    # counting or Gaussian fit. We use Gaussian when the ensemble has fewer
-    # than 10 members (counting becomes noisy); otherwise counting.
-    tercile_forecast_method = "counting" if forecast_members.sizes.get("member", 0) >= 10 else "gaussian"
-    tercile_forecast = to_tercile(
-        forecast_members, obs_sliced, method=tercile_forecast_method,
-    )
+        # `to_tercile` produces (tercile, lat, lon) probabilities using member-
+        # counting or Gaussian fit. We use Gaussian when the ensemble has fewer
+        # than 10 members (counting becomes noisy); otherwise counting.
+        tercile_forecast_method = "counting" if forecast_members.sizes.get("member", 0) >= 10 else "gaussian"
+        tercile_forecast = to_tercile(
+            forecast_members, obs_sliced, method=tercile_forecast_method,
+        )
 
-    # MME mean for the forecast year (consumer-facing 'forecast' scalar map).
-    forecast_mean = forecast_members.mean("member")
+        # MME mean for the forecast year (consumer-facing 'forecast' scalar map).
+        forecast_mean = forecast_members.mean("member")
 
     # Skillmask (§7): where cross-validated Pearson skill is below the
     # threshold, replace the forecast with climatology. This changes forecast
@@ -212,6 +286,7 @@ def seasonal_mme(
         "cv": cv,
         "method": method,
         "tercile_method": resolved_tercile_method,
+        "probability_aggregation": probability_aggregation,
         "tracks": list(predictor_tracks.keys()),
         "n_members": len(per_model_forecasts),
         "forecast_year": int(resolved_forecast_year),
@@ -301,7 +376,8 @@ _METHOD_PARAMS = (
     "n_modes", "x_eof_modes", "y_eof_modes", "cca_modes",
     "device", "n_samples", "target_variable", "standardize",
     # CPT_ARGS knobs applied inside the method (§7). skillmask_threshold and
-    # crossvalidation_window are handled by the orchestrator, not the method.
+    # crossvalidation_window and mode_selection are handled by the orchestrator,
+    # not the method.
     "transform_predictand", "tailoring", "drymask_threshold",
 )
 
@@ -341,6 +417,43 @@ def _per_model_cv(hcst, fcst, obs_sliced, *, method, cv_scheme, cpt_args,
         fold_iter = cv_fn(all_years, window=cv_window)
     else:
         fold_iter = cv_fn(all_years)
+
+    if method == "cca" and (cpt_args or {}).get("mode_selection") in ("auto", "cpt"):
+        if cv_scheme != "loyo":
+            raise ValueError(
+                "seasonal_mme: CCA mode_selection='auto' currently requires "
+                "cv='loyo', matching CPT's cross-validated mode-selection path."
+            )
+        from ..methods.cca import select_modes
+        mode_window = cv_window if cv_window is not None else 1
+        x_range = (cpt_args or {}).get("x_eof_range", (1, 10))
+        y_range = (cpt_args or {}).get("y_eof_range", (1, 10))
+        cca_range = (cpt_args or {}).get("cca_range", (1, 10))
+        # Default the fallback to the smallest searched combo so a model whose
+        # CV goodness is never finite falls back to minimal modes instead of
+        # aborting the whole MME run; callers can override via cpt_args.
+        fallback_modes = (cpt_args or {}).get(
+            "mode_selection_fallback",
+            (x_range[0], y_range[0], cca_range[0]),
+        )
+        xe, ye, cc, goodness, _cv, _lev = select_modes(
+            hcst_sliced,
+            obs_sliced,
+            all_years,
+            window=mode_window,
+            x_eof_range=x_range,
+            y_eof_range=y_range,
+            cca_range=cca_range,
+            fallback_modes=fallback_modes,
+        )
+        method_kwargs.update({
+            "x_eof_modes": xe,
+            "y_eof_modes": ye,
+            "cca_modes": cc,
+        })
+        method_kwargs["_mode_selection_goodness"] = goodness
+
+    mode_selection_goodness = method_kwargs.pop("_mode_selection_goodness", None)
     fold_predictions = []
     leverages = [] if hasattr(method_cls, "leverage") else None
     can_leverage = leverages is not None
@@ -373,6 +486,8 @@ def _per_model_cv(hcst, fcst, obs_sliced, *, method, cv_scheme, cpt_args,
     # ---- Full fit + forecast-year prediction. ----
     m_full = method_cls(**method_kwargs)
     m_full.fit(hcst_sliced, obs_sliced, **method_kwargs)
+    if mode_selection_goodness is not None:
+        m_full.mode_selection_goodness_ = mode_selection_goodness
 
     if fcst is not None:
         # Caller-provided forecast slice.
@@ -404,6 +519,54 @@ def _per_model_cv(hcst, fcst, obs_sliced, *, method, cv_scheme, cpt_args,
               f"{len(all_years)} CV years, forecast_year={forecast_year}")
 
     return cv_hindcast, forecast_pred, m_full, leverages
+
+
+def _cpt_spatial_boundaries(obs):
+    """CPT-convention tercile boundaries (t33, t67) as spatial DataArrays.
+
+    Same boundary convention `to_tercile_cv(method='cpt')` uses, so the
+    cpt_per_model forecast and its CV-scored skill report share boundaries.
+    """
+    from ..metrics.rpss import _cpt_boundaries
+
+    t33_arr, t67_arr = _cpt_boundaries(obs.values)
+    spatial_dims = [d for d in obs.dims if d != "year"]
+    spatial_coords = {k: v for k, v in obs.coords.items()
+                      if k != "year" and set(obs[k].dims).issubset(set(spatial_dims))}
+    t33 = xr.DataArray(t33_arr, dims=spatial_dims, coords=spatial_coords)
+    t67 = xr.DataArray(t67_arr, dims=spatial_dims, coords=spatial_coords)
+    return t33, t67
+
+
+def _cpt_per_model_tercile_cv(per_model_cv_hindcasts, per_model_methods,
+                              per_model_leverages, obs, *,
+                              fallback_forecast, fallback_method):
+    """Per-model CPT CV terciles averaged across models.
+
+    The CV-scoring twin of the cpt_per_model forecast: each model's CV
+    predictions go through the same `to_tercile_cv(method='cpt')` construction
+    (per-model EOF count and per-year leverages), and the maps are averaged and
+    renormalized exactly like the forecast. Falls back to the pooled
+    construction only if no model supports CPT terciles (dof <= 1 everywhere).
+    """
+    n = len(obs.year)
+    maps = []
+    for key, cv_pred in per_model_cv_hindcasts.items():
+        m = per_model_methods[key]
+        n_modes = int(getattr(m, "x_eof_modes_", getattr(m, "n_modes", 3)))
+        if n - n_modes - 1 <= 1:
+            continue
+        maps.append(to_tercile_cv(
+            cv_pred, obs, method="cpt",
+            leverages=per_model_leverages.get(key), n_modes=n_modes))
+    if not maps:
+        return to_tercile_cv(fallback_forecast, obs, method=fallback_method)
+    stacked = xr.concat(maps, dim="model").mean("model", skipna=True)
+    total = stacked.sum("tercile", skipna=False)
+    out = xr.where(np.isfinite(total) & (total > 0), stacked / total, np.nan)
+    # Match the (year, tercile, lat, lon) ordering the pooled to_tercile_cv path
+    # returns, so downstream scoring/consumers see a consistent shape.
+    return out.transpose("year", "tercile", ...)
 
 
 def _pool_members(per_model_arrays):

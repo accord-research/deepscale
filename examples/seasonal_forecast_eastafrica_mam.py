@@ -1,64 +1,52 @@
-"""§8 End-to-end seasonal forecast reference — East Africa MAM.
+"""End-to-end seasonal forecast reference: East Africa MAM.
 
 A DeepScale + Rosetta port of ``pycpt-reference/pycpt_seasonal_forecast.py``,
 structured in the same 7 phases and runnable phase-by-phase.
 
   # full real run (needs CDS creds + network):
-  python examples/seasonal_forecast_eastafrica_mam.py
-  python examples/seasonal_forecast_eastafrica_mam.py --phase 0 1 2
+  uv run python examples/seasonal_forecast_eastafrica_mam.py
+  uv run python examples/seasonal_forecast_eastafrica_mam.py --phase 0 1 2
 
   # plan only, no network:
-  python examples/seasonal_forecast_eastafrica_mam.py --dry-run
+  uv run python examples/seasonal_forecast_eastafrica_mam.py --dry-run
 
-  # synthetic smoke (no network) — exercises the real pipeline end to end:
-  python examples/seasonal_forecast_eastafrica_mam.py --tiny --phase 0 1 2 3 5 6
+  # synthetic smoke (no network), exercises the real pipeline end to end:
+  uv run python examples/seasonal_forecast_eastafrica_mam.py --tiny --phase 0 1 2 3 5 6
 
 Model note
 ----------
 PyCPT's reference blends 10 GCMs. SPEAR / SPEARb / CanSIPS-IC4 lived in the
-now-sunset IRI Data Library; rosetta #14 added a CCSR-successor adapter that
-serves them again over OPeNDAP, so they are now **included**. Models still
-served from elsewhere (ECMWF/CMCC/DWD/Météo-France via C3S; CCSM4/GEOS via
-NCEI) round out the ensemble. Phase 0's banner lists exactly which models the
-MME used.
+now-sunset IRI Data Library; a CCSR-successor adapter serves them again over
+OPeNDAP, so they are now included. Models still served from elsewhere
+(ECMWF/CMCC/DWD/Meteo-France via C3S; CCSM4/GEOS via NCEI) round out the
+ensemble. Phase 0's banner lists exactly which models the MME used.
 """
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import numpy as np
 import xarray as xr
-
-
-def _configure_import_paths() -> Path:
-    """Allow running without installing the sibling repos (rosetta, deepscale)."""
-    common_root = Path(__file__).resolve().parents[2]
-    for repo in ("rosetta", "deepscale"):
-        src = common_root / repo / "src"
-        if src.is_dir():
-            sys.path.insert(0, str(src))
-    return common_root
-
-
-_configure_import_paths()
-
-import deepscale  # noqa: E402
-from deepscale.flex_forecast import flex_forecast  # noqa: E402
+import deepscale as ds
+from deepscale.plotting import (
+    plot_domains, plot_skill_maps, plot_eof_modes, plot_cca_modes,
+    plot_tercile_forecast, plot_deterministic_forecast,
+    plot_exceedance_probability, plot_flex_pdf,
+)
 
 # ---- Configuration (mirrors the PyCPT reference's CONFIGURATION block) -------
 REGION = [-12, 6, 28, 42]          # East Africa [lat_s, lat_n, lon_w, lon_e]
 INIT = "2025-02"                   # February initialization
-TARGET = "MAM"                     # March–April–May
+TARGET = "MAM"                     # March-April-May
 TARGET_MONTHS = [3, 4, 5]
 HINDCAST = (1993, 2016)
 NAIROBI = (36.8, -1.3)             # (lon, lat) for the flex-forecast PDF point
-PREDICTAND = "obs/chirps"          # Sheerwater-backed CHIRPS (rosetta #7)
+PREDICTAND = "obs/chirps"          # Sheerwater-backed CHIRPS
 
 # PyCPT reference models, as rosetta products. (track, label, rosetta_product)
-# SPEAR + CanSIPS-IC4 are served via the CCSR adapter (rosetta #14); hindcast
-# entries are used here (CV training over 1991–2020).
+# SPEAR + CanSIPS-IC4 are served via the CCSR adapter; hindcast entries are
+# used here (CV training over 1991-2020).
 PRCP_MODELS = [
     ("ECMWF-SEAS5", "c3s/ecmwf-monthly"),
     ("CCSM4", "nmme/ccsm4"),
@@ -72,31 +60,29 @@ SST_MODELS = [
     ("SPEARb", "nmme/spearb-hindcast"),
     ("CanSIPS-IC4", "nmme/cansipsic4-hindcast"),
 ]
-EXCLUDED_MODELS = []  # SPEAR/CanSIPS restored via CCSR adapter (#14)
+EXCLUDED_MODELS = []  # SPEAR/CanSIPS restored via CCSR adapter
 
 # crossvalidation_window=5 matches PyCPT's default (deepscale's own default is 1).
 CPT_ARGS = {"crossvalidation_window": 5}
 
 
-def _banner(lines):
-    print("=" * 64)
+def _banner(header, lines):
+    print(f"\n{header}\n" + "-" * len(header))
     for ln in lines:
         print(f"  {ln}")
-    print("=" * 64)
 
 
 # ----------------------------------------------------------------------------
-# Phase 0 — config banner, catalog verification, domain map.
+# Phase 0: config banner, catalog verification, domain map.
 # ----------------------------------------------------------------------------
 def phase0(ctx):
-    _banner([
-        "SEASONAL FORECAST REFERENCE — East Africa MAM (DeepScale + Rosetta)",
+    _banner("Seasonal forecast reference: East Africa MAM (DeepScale + Rosetta)", [
         f"region={REGION}  init={INIT}  target={TARGET}  hindcast={HINDCAST}",
         f"predictand={PREDICTAND}",
         f"PRCP track: {[m[0] for m in PRCP_MODELS]}",
         f"SST  track: {[m[0] for m in SST_MODELS]}",
         (f"excluded: {EXCLUDED_MODELS}" if EXCLUDED_MODELS
-         else "excluded: none (SPEAR/CanSIPS restored via CCSR adapter, #14)"),
+         else "excluded: none (SPEAR/CanSIPS restored via CCSR adapter)"),
     ])
     if ctx["dry_run"] or ctx["tiny"]:
         print("[phase 0] (dry-run/tiny) skipping remote catalog verification.")
@@ -113,18 +99,17 @@ def phase0(ctx):
 
 
 def _plot_domains():
-    from deepscale.plotting import plot_domains
     return plot_domains(predictor_extent=tuple(REGION),
                         predictand_extent=tuple(REGION),
-                        title=f"Domain — East Africa {TARGET}")
+                        title=f"Domain: East Africa {TARGET}")
 
 
 # ----------------------------------------------------------------------------
-# Phase 1 — fetch (or synthesize) predictor tracks + predictand.
+# Phase 1: fetch (or synthesize) predictor tracks + predictand.
 # ----------------------------------------------------------------------------
 def phase1(ctx):
     if ctx["dry_run"]:
-        print("[phase 1] DRY RUN — would fetch via Rosetta:")
+        print("[phase 1] DRY RUN - would fetch via Rosetta:")
         for track, models in (("prcp", PRCP_MODELS), ("sst", SST_MODELS)):
             for label, product in models:
                 print(f"    {track:4s}  {label:12s} <- {product}  "
@@ -199,19 +184,19 @@ def _fetch_tracks_and_obs():
 
 
 # ----------------------------------------------------------------------------
-# Phase 2 — seasonal MME (both tracks).
+# Phase 2: seasonal MME (both tracks).
 # ----------------------------------------------------------------------------
 def phase2(ctx):
     _require(ctx, "tracks", "obs")
-    result = deepscale.seasonal_mme(ctx["tracks"], ctx["obs"],
-                                    cpt_args=CPT_ARGS, verbose=False)
+    result = ds.seasonal_mme(ctx["tracks"], ctx["obs"],
+                             cpt_args=CPT_ARGS, verbose=False)
     ctx["result"] = result
     print(f"[phase 2] MME complete: forecast={dict(result.forecast.sizes)}, "
           f"scores={list(result.skill_report.scores)[:6]}")
 
 
 # ----------------------------------------------------------------------------
-# Phase 3 — per-MME skill maps.
+# Phase 3: per-MME skill maps.
 # ----------------------------------------------------------------------------
 def phase3(ctx):
     _require(ctx, "result")
@@ -221,12 +206,11 @@ def phase3(ctx):
 
 
 def _plot_skill(ctx, metrics):
-    from deepscale.plotting import plot_skill_maps
     return plot_skill_maps(ctx["result"].skill_report, metrics, ncols=2)
 
 
 # ----------------------------------------------------------------------------
-# Phase 4 — EOF + CCA modes (per model).
+# Phase 4: EOF + CCA modes (per model).
 # ----------------------------------------------------------------------------
 def phase4(ctx):
     _require(ctx, "result")
@@ -240,14 +224,13 @@ def phase4(ctx):
 
 
 def _plot_modes(method, kind):
-    from deepscale.plotting import plot_eof_modes, plot_cca_modes
     if kind == "eof":
         return plot_eof_modes(method, kind="predictor", n_modes=2)
     return plot_cca_modes(method, n_modes=2)
 
 
 # ----------------------------------------------------------------------------
-# Phase 5 — MME tercile + deterministic forecast + MME skill.
+# Phase 5: MME tercile + deterministic forecast + MME skill.
 # ----------------------------------------------------------------------------
 def phase5(ctx):
     _require(ctx, "result")
@@ -256,27 +239,25 @@ def phase5(ctx):
                lambda: _plot_tercile(r.tercile_forecast))
     _save_plot(ctx, "mme_deterministic",
                lambda: _plot_det(r.forecast))
-    # MME skill reuses plot_skill_maps (no separate plot_mme_skill — Decision 3).
+    # MME skill reuses plot_skill_maps (no separate plot_mme_skill helper).
     metrics = [m for m in ("rpss", "pearson_r") if m in r.skill_report.scores]
     if metrics:
         _save_plot(ctx, "mme_skill", lambda: _plot_skill(ctx, metrics))
 
 
 def _plot_tercile(tercile_forecast):
-    from deepscale.plotting import plot_tercile_forecast
     tcst = tercile_forecast
     if "year" in tcst.dims:
         tcst = tcst.isel(year=-1)
-    return plot_tercile_forecast(tcst, title=f"MME Dominant Tercile ({TARGET})")
+    return plot_tercile_forecast(tcst, title=f"MME dominant tercile ({TARGET})")
 
 
 def _plot_det(forecast):
-    from deepscale.plotting import plot_deterministic_forecast
     return plot_deterministic_forecast(forecast, title=f"MME Deterministic ({TARGET})")
 
 
 # ----------------------------------------------------------------------------
-# Phase 6 — flex forecast: exceedance probability + Nairobi PDF.
+# Phase 6: flex forecast - exceedance probability + Nairobi PDF.
 # ----------------------------------------------------------------------------
 def phase6(ctx):
     _require(ctx, "result", "obs")
@@ -285,7 +266,7 @@ def phase6(ctx):
         print("[phase 6] no PEV available; skipping flex forecast.")
         return
     # P(precip > climatological median).
-    flex = flex_forecast(r.forecast, r.pev, ctx["obs"], threshold=0.5, is_percentile=True)
+    flex = ds.flex_forecast(r.forecast, r.pev, ctx["obs"], threshold=0.5, is_percentile=True)
     ctx["flex"] = flex
     print(f"[phase 6] flex forecast: mean exceedance(>median)="
           f"{float(flex.exceedance_prob.mean()):.3f}")
@@ -296,12 +277,10 @@ def phase6(ctx):
 
 
 def _plot_exceedance(flex):
-    from deepscale.plotting import plot_exceedance_probability
     return plot_exceedance_probability(flex.exceedance_prob, threshold="median")
 
 
 def _plot_pdf(flex):
-    from deepscale.plotting import plot_flex_pdf
     return plot_flex_pdf(flex.fcst_mu, flex.fcst_scale, flex.climo_mu, flex.climo_scale,
                          location=NAIROBI)
 
@@ -312,7 +291,7 @@ def _require(ctx, *keys):
     if missing:
         raise RuntimeError(
             f"phase prerequisites missing: {missing}. Run earlier phases "
-            f"(this normally can't happen — the runner auto-includes prerequisites)."
+            f"(this normally can't happen - the runner auto-includes prerequisites)."
         )
 
 
@@ -323,7 +302,7 @@ def _save_plot(ctx, name, fig_fn):
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
     except ImportError:
-        print(f"[plot] matplotlib not installed — skipping '{name}'.")
+        print(f"[plot] matplotlib not installed - skipping '{name}'.")
         return
     try:
         fig = fig_fn()
@@ -350,7 +329,7 @@ def _expand_with_prerequisites(selected):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="East Africa MAM seasonal forecast reference (§8).")
+    ap = argparse.ArgumentParser(description="East Africa MAM seasonal forecast reference.")
     ap.add_argument("--phase", type=int, nargs="+", default=list(range(7)),
                     choices=range(7), help="Phases to run (default: all).")
     ap.add_argument("--dry-run", action="store_true",
@@ -373,7 +352,7 @@ def main(argv=None):
     for p in phases:
         _PHASES[p](ctx)
 
-    print("PIPELINE COMPLETE" + (" (dry-run)" if args.dry_run else
+    print("Pipeline complete" + (" (dry-run)" if args.dry_run else
                                   " (tiny)" if args.tiny else ""))
 
 

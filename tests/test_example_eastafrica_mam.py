@@ -26,7 +26,7 @@ def test_dry_run_prints_plan_and_completes():
     assert r.returncode == 0, r.stderr
     assert "East Africa" in r.stdout and "MAM" in r.stdout
     assert "DRY RUN" in r.stdout
-    assert "PIPELINE COMPLETE" in r.stdout
+    assert "Pipeline complete" in r.stdout
     # SPEAR/CanSIPS exclusion is surfaced to the user.
     assert "SPEAR" in r.stdout
 
@@ -36,7 +36,7 @@ def test_tiny_pipeline_runs_end_to_end(tmp_path):
     r = _run(["--tiny", "--phase", "0", "1", "2", "5", "6",
               "--output-dir", str(tmp_path)])
     assert r.returncode == 0, r.stderr
-    assert "PIPELINE COMPLETE" in r.stdout
+    assert "Pipeline complete" in r.stdout
     # Phase 2 produced an MME; phase 6 produced a flex forecast.
     assert "MME complete" in r.stdout
     assert "flex forecast" in r.stdout

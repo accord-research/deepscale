@@ -48,13 +48,20 @@ def _labels_from_obs(obs_vals: np.ndarray):
     with np.errstate(invalid="ignore"):
         t33 = np.nanpercentile(obs_vals, 100.0 / 3.0, axis=0)
         t67 = np.nanpercentile(obs_vals, 200.0 / 3.0, axis=0)
+    # Boundaries are inclusive on both ends (<= t33 / >= t67) so values tied to
+    # a tercile boundary land in the outer class rather than all collapsing into
+    # 'normal'. Without this, a mass of repeated values at a boundary (dry cells
+    # with many zeros, coarse integer obs) starves the below/above classes and
+    # gives the per-cell logit a degenerate label distribution. `below` takes
+    # precedence so the degenerate t33 == t67 case resolves deterministically.
+    finite = np.isfinite(obs_vals)
+    below = (obs_vals <= t33[None, :]) & finite
+    above = (obs_vals >= t67[None, :]) & finite & (~below)
+    normal = (~below) & (~above) & finite
     labels = np.full(obs_vals.shape, -1, dtype=int)
-    below = obs_vals < t33[None, :]
-    above = obs_vals > t67[None, :]
-    normal = (~below) & (~above) & np.isfinite(obs_vals)
-    labels[below & np.isfinite(obs_vals)] = 0
+    labels[below] = 0
     labels[normal] = 1
-    labels[above & np.isfinite(obs_vals)] = 2
+    labels[above] = 2
     return labels, t33, t67
 
 
@@ -217,8 +224,9 @@ def logistic_forecast(
                 "does not yield standard p-values)."
             )
 
-    lat_dim = next(d for d in ("lat", "latitude", "Y", "y") if d in obs.dims)
-    lon_dim = next(d for d in ("lon", "longitude", "X", "x") if d in obs.dims)
+    from ._spatial import spatial_dims
+
+    lat_dim, lon_dim = spatial_dims(obs, context="logistic_forecast")
     obs = obs.transpose("year", lat_dim, lon_dim)
     nlat, nlon = obs.sizes[lat_dim], obs.sizes[lon_dim]
     obs_vals = obs.values.reshape(obs.sizes["year"], -1)

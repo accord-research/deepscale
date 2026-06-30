@@ -1,5 +1,7 @@
 """Forecast output plots: tercile, deterministic, exceedance, flex-PDF."""
 
+from pathlib import Path
+
 import numpy as np
 from .._optional import require_optional
 
@@ -9,6 +11,12 @@ _HINT = "pip install deepscale[plotting]"
 # Dominant-tercile color saturation: probability above 1/3 at which
 # the color reaches full intensity. 0.37 = 70% probability cap.
 _TERCILE_SAT = 0.37
+
+# Natural Earth coastline/border shapefiles, as cached by cartopy. Used to draw
+# a basemap via geopandas when cartopy itself is not installed.
+_NE_ROOT = Path.home() / ".local" / "share" / "cartopy" / "shapefiles" / "natural_earth"
+_NE_COAST = _NE_ROOT / "physical" / "ne_50m_coastline.shp"
+_NE_BORDERS = _NE_ROOT / "cultural" / "ne_50m_admin_0_boundary_lines_land.shp"
 
 
 def _new_fig(ax, figsize=(8, 5)):
@@ -20,6 +28,110 @@ def _new_fig(ax, figsize=(8, 5)):
     else:
         fig = ax.figure
     return plt, fig, ax
+
+
+def _tercile_rgb(probs, red_cat, blue_cat):
+    """Dominant-tercile RGB image. `probs` is (tercile=3, lat, lon).
+
+    Cells that are not a complete finite tercile triple (significance-masked or
+    uncalibratable cells arrive as all-NaN) are left blank (white) rather than
+    painted into a category. Without this, ``argmax``/``max`` over an all-NaN
+    cell return category 0 / NaN, so masked cells would render as a confident
+    below/above colour (or NaN pixels) instead of as "no valid forecast".
+    """
+    valid = np.isfinite(probs).all(axis=0)
+    dom_cat = probs.argmax(axis=0)
+    dom_prob = probs.max(axis=0)
+    intensity = np.clip((dom_prob - 1 / 3) / _TERCILE_SAT, 0.0, 1.0)
+
+    rgb = np.ones(dom_cat.shape + (3,))
+    is_red = (dom_cat == red_cat) & valid
+    is_blue = (dom_cat == blue_cat) & valid
+    is_normal = (dom_cat == 1) & valid
+    rgb[is_red] = np.stack(
+        [np.ones(is_red.sum()), 1 - intensity[is_red], 1 - intensity[is_red]], axis=-1
+    )
+    rgb[is_blue] = np.stack(
+        [1 - intensity[is_blue], 1 - intensity[is_blue], np.ones(is_blue.sum())], axis=-1
+    )
+    rgb[is_normal] = np.stack(
+        [1 - 0.4 * intensity[is_normal]] * 3, axis=-1
+    )
+    return rgb
+
+
+def _make_tercile_axes(plt, extent, figsize):
+    """Best-available single-map axes: a cartopy GeoAxes if cartopy is
+    importable, otherwise a plain axes. Returns (fig, ax, is_geo)."""
+    try:
+        import importlib
+        ccrs = importlib.import_module("cartopy.crs")
+    except Exception:
+        fig, ax = plt.subplots(figsize=figsize)
+        return fig, ax, False
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+    ax.set_extent(extent, crs=ccrs.PlateCarree())
+    return fig, ax, True
+
+
+def _draw_cartopy_basemap(ax):
+    import importlib
+    cfeature = importlib.import_module("cartopy.feature")
+    ax.coastlines(resolution="50m", linewidth=0.8, color="#333333")
+    ax.add_feature(cfeature.BORDERS, linewidth=0.6, edgecolor="#555555")
+    gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="#777777", alpha=0.5)
+    gl.top_labels = False
+    gl.right_labels = False
+
+
+def _to_0_360(gdf):
+    """Shift a -180..180 GeoDataFrame into the 0-360 longitude convention.
+
+    Natural Earth ships in -180..180; forecast grids are often 0-360. Any
+    geometry sitting in the western hemisphere (min longitude < 0) is translated
+    by +360 so coastlines line up with 0-360 data instead of being clipped to
+    the eastern hemisphere. Geometries straddling the prime meridian are rare in
+    coastline/border line data and shift wholesale, which is acceptable for a
+    context basemap.
+    """
+    from shapely.affinity import translate
+
+    def _shift(geom):
+        return translate(geom, xoff=360.0) if geom.bounds[0] < 0 else geom
+
+    return gdf.assign(geometry=gdf.geometry.apply(_shift))
+
+
+def _draw_geopandas_basemap(ax, extent):
+    """Overplot Natural Earth coastlines/borders via geopandas. Returns True if
+    drawn, False if geopandas or the cached shapefiles are unavailable."""
+    try:
+        import importlib
+        gpd = importlib.import_module("geopandas")
+    except Exception:
+        return False
+    if not (_NE_COAST.exists() and _NE_BORDERS.exists()):
+        return False
+    lon_w, lon_e, lat_s, lat_n = extent
+    # Natural Earth is -180..180. When the forecast grid uses the 0-360
+    # convention (any longitude past 180), shift the shapefile geometries into
+    # 0-360 first; otherwise .cx selects only the eastern hemisphere and clips
+    # out coastlines west of the prime meridian.
+    use_0_360 = lon_e > 180.0
+    try:
+        for path, color, lw, z in (
+            (_NE_COAST, "#333333", 0.8, 3),
+            (_NE_BORDERS, "#555555", 0.6, 4),
+        ):
+            gdf = gpd.read_file(path)
+            if use_0_360:
+                gdf = _to_0_360(gdf)
+            gdf.cx[lon_w:lon_e, lat_s:lat_n].plot(
+                ax=ax, color=color, linewidth=lw, zorder=z)
+    except Exception:
+        return False
+    return True
 
 
 def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip"):
@@ -42,7 +154,9 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
     Color intensity scales with `(max_prob - 1/3)`, saturating at +0.37
     (i.e. 70% probability) so highly confident forecasts don't wash out.
 
-    A legend in the lower-right corner shows the three categories.
+    Coastlines and national borders are drawn over the map when cartopy or
+    geopandas (with cached Natural Earth shapefiles) is available, and quietly
+    skipped otherwise. A legend below the map shows the three categories.
 
     Input shape: (tercile=3, lat, lon), values in [0, 1] summing to 1.
     """
@@ -60,45 +174,40 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
         )
     blue_cat = 2 if red_cat == 0 else 0
 
-    plt, fig, ax = _new_fig(ax)
     import importlib
+    require_optional("matplotlib", _HINT)
+    plt = importlib.import_module("matplotlib.pyplot")
     Patch = importlib.import_module("matplotlib.patches").Patch
 
-    probs = pr_fcst.values  # (3, lat, lon)
-    dom_cat = probs.argmax(axis=0)
-    dom_prob = probs.max(axis=0)
-    intensity = np.clip((dom_prob - 1 / 3) / _TERCILE_SAT, 0.0, 1.0)
+    from .._spatial import spatial_dims
 
-    rgb = np.ones(dom_cat.shape + (3,))
-    is_red = dom_cat == red_cat
-    is_blue = dom_cat == blue_cat
-    is_normal = dom_cat == 1
-    rgb[is_red] = np.stack([
-        np.ones(is_red.sum()),
-        1 - intensity[is_red],
-        1 - intensity[is_red],
-    ], axis=-1)
-    rgb[is_blue] = np.stack([
-        1 - intensity[is_blue],
-        1 - intensity[is_blue],
-        np.ones(is_blue.sum()),
-    ], axis=-1)
-    rgb[is_normal] = np.stack([
-        1 - 0.4 * intensity[is_normal],
-        1 - 0.4 * intensity[is_normal],
-        1 - 0.4 * intensity[is_normal],
-    ], axis=-1)
+    lat_dim, lon_dim = spatial_dims(pr_fcst, context="plot_tercile_forecast")
+    rgb = _tercile_rgb(
+        pr_fcst.transpose("tercile", lat_dim, lon_dim).values, red_cat, blue_cat)
+    lon = pr_fcst[lon_dim].values
+    lat = pr_fcst[lat_dim].values
+    extent = (float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max()))
 
-    lon = pr_fcst.lon.values
-    lat = pr_fcst.lat.values
-    ax.imshow(
-        rgb,
-        extent=(lon.min(), lon.max(), lat.min(), lat.max()),
-        origin="lower",
-        aspect="auto",
-    )
-    ax.set_xlabel("Lon")
-    ax.set_ylabel("Lat")
+    if ax is None:
+        fig, ax, is_geo = _make_tercile_axes(plt, extent, figsize=(8, 5.5))
+    else:
+        fig = ax.figure
+        is_geo = hasattr(ax, "coastlines")
+
+    if is_geo:
+        ccrs = importlib.import_module("cartopy.crs")
+        ax.imshow(rgb, extent=extent, origin="lower", transform=ccrs.PlateCarree())
+        _draw_cartopy_basemap(ax)
+    else:
+        ax.imshow(rgb, extent=extent, origin="lower", aspect="auto", zorder=1)
+        drew = _draw_geopandas_basemap(ax, extent)
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+        ax.set_xlabel("Longitude")
+        ax.set_ylabel("Latitude")
+        if drew:
+            ax.grid(color="#777777", linewidth=0.3, alpha=0.5)
+
     ax.set_title(title or "Dominant tercile probability")
 
     below_color = (1.0, 0.0, 0.0) if red_cat == 0 else (0.0, 0.0, 1.0)
@@ -110,7 +219,10 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
     ]
     ax.legend(
         handles=legend_handles,
-        loc="lower right",
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.10),
+        ncol=3,
+        frameon=True,
         framealpha=0.9,
         fontsize=8,
         title="Dominant tercile  (intensity = confidence)",

@@ -57,6 +57,26 @@ def test_calibrate_ereg_single_model_matches_method():
         expected.transpose("tercile", "lat", "lon").values, atol=1e-9)
 
 
+def test_calibrate_ereg_passes_threshold_source():
+    from deepscale.methods.ensemble_regression import EnsembleRegressionMethod
+    hcst, obs = _gcm_obs(seed=9)
+    expected = (EnsembleRegressionMethod().fit(hcst, obs)
+                .predict_tercile(
+                    hcst.sel(year=[2019]), obs, threshold_source="fitted"))
+
+    got = ds.calibrate(
+        {"m": (hcst, None)},
+        obs,
+        method="ereg",
+        forecast_year=2019,
+        threshold_source="fitted",
+    )
+
+    np.testing.assert_allclose(
+        got.transpose("tercile", "lat", "lon").values,
+        expected.transpose("tercile", "lat", "lon").values, atol=1e-9)
+
+
 def test_calibrate_ereg_averages_models():
     h1, obs = _gcm_obs(seed=0, bias=3.0)
     h2, _ = _gcm_obs(seed=1, bias=-2.0)
@@ -306,6 +326,49 @@ def test_calibrate_logit_requires_forecast():
                        coords={"year": years, "lat": [0, 1], "lon": [0, 1]})
     with pytest.raises(ValueError, match="requires forecast"):
         ds.calibrate(idx, obs, method="logit")
+
+
+def test_detrend_index_uses_explicit_forecast_year():
+    """For a bare-scalar forecast index (no year coord), _detrend_index must
+    detrend at the supplied forecast_year, not blindly at years[-1] + 1."""
+    from deepscale.calibrate import _detrend_index
+
+    years = list(range(2000, 2020))
+    idx = xr.DataArray([2.0 * (y - 2000) for y in years],
+                       dims="year", coords={"year": years})
+    fc = xr.DataArray(50.0)  # bare scalar, no year coordinate
+
+    _, f_2001 = _detrend_index(idx, fc, forecast_year=2001)
+    _, f_2030 = _detrend_index(idx, fc, forecast_year=2030)
+    assert not np.isclose(float(f_2001), float(f_2030))
+
+    # With no forecast_year the documented fallback is years[-1] + 1 = 2020.
+    _, f_fallback = _detrend_index(idx, fc)
+    _, f_2020 = _detrend_index(idx, fc, forecast_year=2020)
+    assert np.isclose(float(f_fallback), float(f_2020))
+
+
+def test_calibrate_logit_detrend_respects_forecast_year():
+    """calibrate(method='logit', detrend=True, forecast_year=...) must thread
+    forecast_year into the detrend for a bare-scalar forecast index."""
+    rng = np.random.default_rng(7)
+    years = np.arange(2000, 2030)
+    # Linear trend + genuine variability, so detrending leaves real signal for
+    # the logit (a perfectly linear index would detrend to ~zero variance).
+    noise = rng.normal(0.0, 1.0, 30)
+    idx = xr.DataArray(0.1 * (years - 2015) + noise,
+                       dims=["year"], coords={"year": years})
+    # Rainfall responds to the detrended (de-meaned, de-trended) component.
+    obs = xr.DataArray(
+        120.0 - 40.0 * noise[:, None, None] + rng.normal(0, 8, (30, 2, 2)),
+        dims=["year", "lat", "lon"],
+        coords={"year": years, "lat": [0, 1], "lon": [0, 1]},
+    )
+    early = ds.calibrate(idx, obs, method="logit", forecast=1.0,
+                         detrend=True, forecast_year=2005)
+    late = ds.calibrate(idx, obs, method="logit", forecast=1.0,
+                        detrend=True, forecast_year=2025)
+    assert not np.allclose(early.values, late.values, equal_nan=True)
 
 
 def test_calibrate_unknown_method():

@@ -22,6 +22,42 @@ def _obs(seed=3, n=12):
                         coords={"year": years, "lat": [0.0, 1.0], "lon": [0.0, 1.0]})
 
 
+def test_cpt_tercile_forecast_shape_and_normalization():
+    from deepscale.tercile import cpt_tercile_forecast
+
+    lat, lon = [0.0, 1.0], [0.0, 1.0, 2.0]
+    fc = xr.DataArray(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+                      dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+    t33 = xr.full_like(fc, 2.0)
+    t67 = xr.full_like(fc, 4.0)
+    s2 = xr.full_like(fc, 1.0)
+
+    out = cpt_tercile_forecast(fc, t33, t67, s2, dofr=10, leverage=0.0)
+    assert out.dims == ("tercile", "lat", "lon")
+    assert list(out.tercile.values) == [0, 1, 2]
+    np.testing.assert_allclose(out.sum("tercile").values, 1.0, atol=1e-9)
+
+
+def test_cpt_tercile_forecast_aligns_transposed_boundaries():
+    """Boundary/PEV arrays are aligned to the forecast's dim order before the
+    Student-t evaluation, so a transposed input can't mismap probabilities."""
+    from deepscale.tercile import cpt_tercile_forecast
+
+    lat, lon = [0.0, 1.0], [0.0, 1.0, 2.0]
+    fc = xr.DataArray(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+                      dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+    t33 = xr.DataArray(np.array([[1.5, 2.0, 2.5], [3.0, 4.0, 5.0]]),
+                       dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+    t67 = t33 + 2.0
+    s2 = xr.full_like(fc, 1.3)
+
+    out = cpt_tercile_forecast(fc, t33, t67, s2, dofr=9, leverage=0.2)
+    out_t = cpt_tercile_forecast(
+        fc, t33.transpose("lon", "lat"), t67.transpose("lon", "lat"),
+        s2.transpose("lon", "lat"), dofr=9, leverage=0.2)
+    xr.testing.assert_allclose(out, out_t)
+
+
 @pytest.mark.parametrize("method", ["gaussian_loo", "bootstrap"])
 def test_held_out_year_independent_of_its_own_obs(method):
     obs = _obs()

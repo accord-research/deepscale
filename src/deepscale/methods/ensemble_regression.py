@@ -23,18 +23,11 @@ import xarray as xr
 from scipy.stats import norm
 
 from .base import MethodBase
+from .._spatial import spatial_dims
 
 
 def _spatial_dims(da):
-    lat = next((d for d in ("lat", "latitude", "Y", "y") if d in da.dims), None)
-    lon = next((d for d in ("lon", "longitude", "X", "x") if d in da.dims), None)
-    if lat is None or lon is None:
-        raise ValueError(
-            f"ensemble_regression could not find lat/lon dims on data with "
-            f"dims {tuple(da.dims)}; expected one of lat/latitude/Y/y and "
-            "lon/longitude/X/x."
-        )
-    return lat, lon
+    return spatial_dims(da, context="ensemble_regression")
 
 
 class EnsembleRegressionMethod(MethodBase):
@@ -119,7 +112,34 @@ class EnsembleRegressionMethod(MethodBase):
         self.predictand_coords_ = {olat: obs[olat], olon: obs[olon]}
         self.predictand_shape_ = shape
         self.n_train_ = n_years
+        # Stash the (member-reduced) training predictor so the fitted-threshold
+        # hindcast can be built lazily (see the fitted_hindcast_ property); it is
+        # unused on the default threshold_source='obs' path.
+        self._fit_gcm_mean_ = gcm_mean
         return self
+
+    @property
+    def fitted_hindcast_(self):
+        """Calibrated hindcast over the training years, dims ``(year, lat, lon)``.
+
+        Used only by ``predict_tercile(threshold_source="fitted")``. Computed
+        lazily on first access and cached, so the default ``"obs"`` path doesn't
+        pay for a full-grid broadcast on every fit/CV-fold. Computed WITHOUT
+        ``clip_negative``: clipping is a deterministic-output floor, and applying
+        it here would pile mass at zero and distort the climatological tercile
+        boundaries.
+        """
+        cached = self.__dict__.get("_fitted_hindcast_cache")
+        if cached is None:
+            x = self._fit_gcm_mean_.values
+            pred = self.slope_[None, ...] * x + self.intercept_[None, ...]
+            cached = xr.DataArray(
+                pred,
+                dims=["year", self.lat_dim_, self.lon_dim_],
+                coords={"year": self._fit_gcm_mean_["year"], **self.predictand_coords_},
+            )
+            self.__dict__["_fitted_hindcast_cache"] = cached
+        return cached
 
     def predict(self, forecast, **kwargs):
         if "member" in forecast.dims:
@@ -154,7 +174,7 @@ class EnsembleRegressionMethod(MethodBase):
             pred, dims=[self.lat_dim_, self.lon_dim_], coords=self.predictand_coords_,
         )
 
-    def predict_tercile(self, forecast, obs_climatology):
+    def predict_tercile(self, forecast, obs_climatology, threshold_source="obs"):
         """Single-year tercile probabilities from THIS model's calibrated Gaussian.
 
         The forecast distribution is ``N(calibrated_mean, sqrt(sigma2))`` per
@@ -170,7 +190,12 @@ class EnsembleRegressionMethod(MethodBase):
         ``sigma.f`` adds smaller ensemble-sampling terms on top; omitted here.)
 
         The spread is eReg's OWN calibrated error, not inter-model spread.
-        Boundaries are the climatological terciles of ``obs_climatology``.
+        Boundaries are the climatological terciles of ``obs_climatology`` by
+        default. With ``threshold_source="fitted"``, boundaries are computed
+        from the calibrated hindcast over the training years (the regression's
+        natural, un-clipped scale — see ``fitted_hindcast_``), matching ICPAC's
+        legacy EnsReg convention. ``clip_negative`` floors the deterministic
+        forecast value but deliberately does not move the tercile boundaries.
         ``seasonal_mme`` calls this per model and averages the resulting maps,
         so the published forecast carries both eReg's within-model uncertainty
         (via ``sigma``) and between-model disagreement (via the average over
@@ -204,8 +229,17 @@ class EnsembleRegressionMethod(MethodBase):
             sigma2 = self.pev_ * (1.0 + leverage)
         sigma = np.sqrt(np.maximum(sigma2, 1e-12))
 
-        t33 = obs_climatology.quantile(1 / 3, dim="year").drop_vars("quantile")
-        t67 = obs_climatology.quantile(2 / 3, dim="year").drop_vars("quantile")
+        if threshold_source == "obs":
+            threshold_base = obs_climatology
+        elif threshold_source == "fitted":
+            threshold_base = self.fitted_hindcast_
+        else:
+            raise ValueError(
+                "threshold_source must be 'obs' or 'fitted'; got "
+                f"{threshold_source!r}."
+            )
+        t33 = threshold_base.quantile(1 / 3, dim="year").drop_vars("quantile")
+        t67 = threshold_base.quantile(2 / 3, dim="year").drop_vars("quantile")
 
         p_bn = norm.cdf(t33.values, loc=mu, scale=sigma)
         p_an = 1.0 - norm.cdf(t67.values, loc=mu, scale=sigma)

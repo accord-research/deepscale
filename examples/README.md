@@ -1,94 +1,52 @@
-# DeepScale Examples
+# DeepScale examples
 
-## `demo_ensemble_regression.py`
-
-End-to-end `deepscale.calibrate(method="ereg")` example. It builds per-model
-hindcast/forecast pairs on the obs grid, runs ensemble-regression calibration,
-and writes a dominant-tercile map. Use `--synthetic` for a no-network smoke run.
+Runnable demo scripts for the DeepScale forecasting API. Each script is
+self-contained and is run from the repository root with `uv run`:
 
 ```bash
-python examples/demo_ensemble_regression.py --synthetic
+uv sync                                       # installs deepscale into the env
+uv run python examples/demo_quantile_mapping.py
 ```
 
-## `demo_logistic_wvg.py`
-
-End-to-end `deepscale.calibrate(method=deepscale.LogitConfig(...))` example for
-the WVG SST index. It reduces gridded SST hindcast/forecast fields to a scalar
-index and produces below/normal/above tercile probabilities.
+The scripts in the first table below run offline. The real-data scripts also
+need Rosetta (a separate repo) installed into the same environment:
 
 ```bash
-python examples/demo_logistic_wvg.py --synthetic
+uv pip install -e ../rosetta                  # clone rosetta alongside deepscale first
 ```
 
-## `seasonal_forecast_eastafrica_mam.py` (§8 reference)
+## Run offline (no network, no credentials)
 
-End-to-end PyCPT-parity reference: a 7-phase multi-model ensemble seasonal
-forecast for East Africa MAM, a DeepScale + Rosetta port of
-`pycpt-reference/pycpt_seasonal_forecast.py`. Phases are individually runnable.
+| Command | Shows |
+| --- | --- |
+| `uv run python examples/demo_quantile_mapping.py` | Quantile-mapping bias correction, empirical and parametric |
+| `uv run python examples/demo_detrended_qm.py` | Detrended QM vs plain QM: preserving a warming trend |
+| `uv run python examples/demo_delta_scaling.py` | Delta-scaling baseline: GCM anomaly onto the obs climatology |
+| `uv run python examples/demo_checkpoint_roundtrip.py` | Save a fitted method, reload it, reproduce the prediction bit-for-bit |
+| `uv run python examples/demo_train_inference.py` | Separated train / inference, with a custom registered method |
+| `uv run python examples/demo_probabilistic_method.py` | A custom probabilistic method scored by counting tercile members |
+| `uv run python examples/demo_ensemble_regression.py --synthetic` | `calibrate(method="ereg")`: ensemble-regression tercile probabilities |
+| `uv run python examples/demo_logistic_wvg.py --synthetic` | `calibrate(LogitConfig(...))`: WVG-index logistic tercile probabilities |
+| `uv run python examples/seasonal_forecast_eastafrica_mam.py --dry-run` | The full multi-phase MME pipeline, plan only (`--tiny` runs it on synthetic data) |
 
-```bash
-# full real run (CDS creds + network):
-python examples/seasonal_forecast_eastafrica_mam.py --phase 0 1 2
-# plan only (no network):
-python examples/seasonal_forecast_eastafrica_mam.py --dry-run
-# synthetic smoke (no network, exercises the real pipeline):
-python examples/seasonal_forecast_eastafrica_mam.py --tiny --phase 0 1 2 3 5 6
-```
+## Need real data or a GPU
 
-**Model coverage:** PyCPT's reference blends 10 GCMs. SPEAR / SPEARb /
-CanSIPS-IC4 (2 of them) are currently **excluded** — their data lived in the
-sunset IRI Data Library. The Columbia CCSR successor is live and serves them,
-but needs a dedicated adapter (rosetta #14); until then the MME runs with the
-verified-available models and Phase 0 prints exactly which were used/skipped.
+These fetch observations and hindcasts through Rosetta, so they need CDS
+credentials in `~/.cdsapirc` and the relevant dataset licences accepted. The
+CorrDiff demo needs an NVIDIA GPU.
 
-## `demo_forecast.py`
+| Command | Shows | Needs |
+| --- | --- | --- |
+| `uv run python examples/demo_ensemble_regression.py` | eReg on real C3S + ERA5 (drop `--synthetic`) | CDS |
+| `uv run python examples/demo_logistic_wvg.py` | WVG logistic on real ERA5 (drop `--synthetic`) | CDS |
+| `uv run python examples/demo_forecast.py` | End-to-end: optimize, leave-one-year-out skill, plot | CDS |
+| `uv run python examples/demo_seasonal_mme.py` | Seasonal multi-model ensemble pipeline | CDS |
+| `uv run python examples/demo_seasonal_mme_multimodel.py` | Multi-model MME with per-member contributions | CDS |
+| `uv run python examples/demo_realdata_comparison.py` | Compare downscaling methods on real CHIRPS + C3S | CDS |
+| `uv run python examples/demo_realdata_skill.py` | Leave-one-year-out RPSS skill of each method | CDS |
+| `uv run python examples/seasonal_forecast_eastafrica_mam.py --phase 0 1 2` | The full PyCPT-parity reference forecast | CDS |
+| `uv run python examples/demo_corrdiff.py` | NVIDIA CorrDiff diffusion downscaling | GPU |
 
-End-to-end example that runs:
-
-1. Rosetta data fetch (ERA5 + C3S/ECMWF)
-2. DeepScale method optimization
-3. Tercile forecast generation
-4. LOYO cross-validated skill report
-5. Plot output to `deepscale/examples/output/demo_forecast.png`
-
-### Prerequisites
-
-1. Clone both repos side by side:
-
-```bash
-git clone https://github.com/jataware/deepscale.git
-git clone https://github.com/jataware/rosetta.git
-```
-
-2. Install dependencies for both:
-
-```bash
-cd rosetta && uv sync
-cd ../deepscale && uv sync
-```
-
-3. Configure CDS credentials in `~/.cdsapirc` (see `rosetta/README.md` for details).
-4. Accept CDS dataset licenses for ERA5 and C3S seasonal products.
-
-### Run
-
-From repository root:
-
-```bash
-python deepscale/examples/demo_forecast.py
-```
-
-Backward-compatible entrypoint (same behavior):
-
-```bash
-python demo_forecast.py
-```
-
-### Local outputs
-
-The script writes local artifacts to `deepscale/examples/output/`:
-
-- `demo_cache/*.nc`
-- `demo_forecast.png`
-
-These are intentionally ignored by git.
+Outputs (PNG, NetCDF) are written to `examples/output/`, which is git-ignored.
+Tercile maps draw coastlines and borders when `cartopy` or `geopandas` is
+available, and fall back to a plain map otherwise.
