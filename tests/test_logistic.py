@@ -107,7 +107,7 @@ def test_labels_assign_tied_boundary_values_to_below_and_above():
     """Values tied to the tercile boundaries must not all collapse into the
     'normal' class. A dry cell with a mass of zeros at the lower boundary should
     populate below-normal; a mass at the upper boundary should populate
-    above-normal."""
+    above-normal. This is the opt-in `tercile_edges="inclusive"` convention."""
     from deepscale.logistic import _labels_from_obs
 
     # Lower-boundary mass: 12 zeros (dry) + 18 increasing positives over 30 yrs.
@@ -116,7 +116,7 @@ def test_labels_assign_tied_boundary_values_to_below_and_above():
     wet = np.concatenate([np.linspace(0.0, 17.0, 18), np.full(12, 100.0)])
     obs_vals = np.stack([dry, wet], axis=1)  # (year=30, ncell=2)
 
-    labels, t33, t67 = _labels_from_obs(obs_vals)
+    labels, t33, t67 = _labels_from_obs(obs_vals, tercile_edges="inclusive")
 
     # Dry cell: the zero mass sits at t33; it must land in below-normal (0),
     # not be starved into normal.
@@ -125,6 +125,27 @@ def test_labels_assign_tied_boundary_values_to_below_and_above():
     assert (labels[:, 1] == 2).sum() > 0
     # All three classes should be representable across the two cells.
     assert set(np.unique(labels[labels >= 0])) == {0, 1, 2}
+
+
+def test_labels_exclusive_default_ties_to_normal():
+    """The DEFAULT convention (`tercile_edges="exclusive"`, pre-63e8361) sends
+    boundary-tied mass into 'normal' rather than the outer classes. Same
+    dry/wet tied fixture as the inclusive test, opposite assertion: the dry
+    cell's zero mass sits exactly at t33, so with strict `<` it is NOT
+    below-normal."""
+    from deepscale.logistic import _labels_from_obs
+
+    dry = np.concatenate([np.zeros(12), np.linspace(1.0, 18.0, 18)])
+    wet = np.concatenate([np.linspace(0.0, 17.0, 18), np.full(12, 100.0)])
+    obs_vals = np.stack([dry, wet], axis=1)  # (year=30, ncell=2)
+
+    labels, t33, t67 = _labels_from_obs(obs_vals)  # default: exclusive
+
+    # Dry cell: the zero mass sits at t33; exclusive (`obs < t33`) excludes it
+    # from below-normal entirely.
+    assert (labels[:, 0] == 0).sum() == 0
+    # Those tied zeros must instead be 'normal'.
+    assert (labels[:12, 0] == 1).all()
 
 
 def test_index_length_mismatch_raises(index):

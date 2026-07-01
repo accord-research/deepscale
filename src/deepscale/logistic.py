@@ -39,24 +39,41 @@ import xarray as xr
 _TERCILE_COORD = [0, 1, 2]  # below, normal, above — matches deepscale.tercile
 
 
-def _labels_from_obs(obs_vals: np.ndarray):
+def _labels_from_obs(obs_vals: np.ndarray, tercile_edges: str = "exclusive"):
     """Per-cell tercile category labels (0/1/2) and the boundaries.
 
     obs_vals: (year, ncell). Returns (labels (year, ncell) int with -1 for NaN,
     t33 (ncell,), t67 (ncell,)).
+
+    tercile_edges : {"exclusive", "inclusive"}
+        How to classify values exactly tied to a tercile boundary.
+
+        - "exclusive" (default): ``below = obs < t33``, ``above = obs > t67``;
+          boundary-tied values land in 'normal'. This is the standard tercile
+          definition and matches the legacy (pre-dry-cell-fix) behavior.
+        - "inclusive": ``below = obs <= t33``, ``above = (obs >= t67) & ~below``
+          (below takes precedence so a degenerate t33 == t67 resolves
+          deterministically). Boundary-tied values land in the outer class
+          instead of 'normal'. Without this, a mass of repeated values at a
+          boundary (dry cells with many zeros, coarse integer obs) starves the
+          below/above classes and gives the per-cell logit a degenerate label
+          distribution. Opt-in because it is not the standard tercile
+          definition and changes classification even for cells with no ties.
     """
     with np.errstate(invalid="ignore"):
         t33 = np.nanpercentile(obs_vals, 100.0 / 3.0, axis=0)
         t67 = np.nanpercentile(obs_vals, 200.0 / 3.0, axis=0)
-    # Boundaries are inclusive on both ends (<= t33 / >= t67) so values tied to
-    # a tercile boundary land in the outer class rather than all collapsing into
-    # 'normal'. Without this, a mass of repeated values at a boundary (dry cells
-    # with many zeros, coarse integer obs) starves the below/above classes and
-    # gives the per-cell logit a degenerate label distribution. `below` takes
-    # precedence so the degenerate t33 == t67 case resolves deterministically.
     finite = np.isfinite(obs_vals)
-    below = (obs_vals <= t33[None, :]) & finite
-    above = (obs_vals >= t67[None, :]) & finite & (~below)
+    if tercile_edges == "exclusive":
+        below = (obs_vals < t33[None, :]) & finite
+        above = (obs_vals > t67[None, :]) & finite
+    elif tercile_edges == "inclusive":
+        below = (obs_vals <= t33[None, :]) & finite
+        above = (obs_vals >= t67[None, :]) & finite & (~below)
+    else:
+        raise ValueError(
+            f"tercile_edges must be 'exclusive' or 'inclusive', got {tercile_edges!r}"
+        )
     normal = (~below) & (~above) & finite
     labels = np.full(obs_vals.shape, -1, dtype=int)
     labels[below] = 0
@@ -175,6 +192,7 @@ def logistic_forecast(
     regularization: float | None = None,
     significance_mask: float | None = None,
     min_years: int = 10,
+    tercile_edges: str = "exclusive",
 ):
     """Per-cell logistic tercile forecast from a scalar predictor index.
 
@@ -201,6 +219,12 @@ def logistic_forecast(
         ``regularization=None``.
     min_years : int
         Minimum finite (index, obs) pairs required to fit a cell; else NaN.
+    tercile_edges : {"exclusive", "inclusive"}
+        How boundary-tied obs values are classified; see ``_labels_from_obs``.
+        ``"exclusive"`` (default) matches the standard tercile definition and
+        legacy behavior; ``"inclusive"`` sends boundary ties to the outer
+        class, which helps dry/tied cells at the cost of no longer matching
+        the standard definition.
 
     Returns
     -------
@@ -256,7 +280,7 @@ def logistic_forecast(
         )
     x_f = float(x_f_arr[0])
 
-    labels, _t33, _t67 = _labels_from_obs(obs_vals)
+    labels, _t33, _t67 = _labels_from_obs(obs_vals, tercile_edges=tercile_edges)
 
     probs = np.full((3, ncell), np.nan)
     pmask = np.zeros(ncell, dtype=bool)  # True -> mask this cell to NaN
