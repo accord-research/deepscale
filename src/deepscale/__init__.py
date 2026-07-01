@@ -8,6 +8,8 @@ from .flex_forecast import flex_forecast, FlexForecastResult
 from .pipelines import seasonal_mme, SeasonalMMEResult
 from .indices import Index
 from .calibrate import calibrate, LogitConfig
+from .io import write_terciles, tercile_mae
+from .plotting.forecasts import plot_tercile_forecast as plot_terciles
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -31,4 +33,7 @@ __all__ = [
     "Index",
     "calibrate",
     "LogitConfig",
+    "write_terciles",
+    "tercile_mae",
+    "plot_terciles",
 ]

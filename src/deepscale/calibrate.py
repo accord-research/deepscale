@@ -384,14 +384,39 @@ def _common_obs_hindcast_years(hcst, obs, *, name):
     return years
 
 
+_NATIVE_YEARS_MIN_OVERLAP = 3
+
+
+def _native_obs_hindcast_years(hcst, obs, *, name):
+    """native_years=True: trim to each model's own hcst ∩ obs overlap instead
+    of requiring the hindcast to cover every obs year. Matches the consumer's
+    ``calibrate_ereg_native_years`` (rosetta_deepscale.run_pipeline), which
+    floors at 3 overlapping years."""
+    obs_years = set(obs.year.values.tolist())
+    years = [int(y) for y in hcst.year.values.tolist() if y in obs_years]
+    if len(years) < _NATIVE_YEARS_MIN_OVERLAP:
+        raise ValueError(
+            f"calibrate(method='ereg') model {name!r}: fewer than "
+            f"{_NATIVE_YEARS_MIN_OVERLAP} overlapping hindcast/obs years "
+            f"(got {len(years)})."
+        )
+    return years
+
+
 @register_calibrator("ereg")
 def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
                     combine="mean", clip_negative=False, threshold_source="obs",
-                    verbose=False, **_):
+                    native_years: bool = False, verbose=False, **_):
     """eReg calibration: per-model OLS(obs ~ ens-mean) → parametric terciles →
     cross-model average. Each model's predictor is ``(hindcast, forecast)`` with
     the GCM already on the obs grid. ``forecast_year`` selects the year; with no
-    provided forecast it defaults to the maximum obs year."""
+    provided forecast it defaults to the maximum obs year.
+
+    ``native_years`` (opt-in, default False): when True, each model is
+    calibrated on its OWN ``hcst.year ∩ obs.year`` overlap (floor 3 years)
+    instead of requiring every model's hindcast to cover every obs year.
+    Default False leaves this byte-for-byte unchanged (still raises on any
+    missing obs year)."""
     from .methods.ensemble_regression import EnsembleRegressionMethod
 
     models = _split_ereg_predictor(predictor, forecast)
@@ -400,12 +425,23 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
     maps = {}
     for name, pair in models.items():
         hcst, fcst = pair
-        years = _common_obs_hindcast_years(hcst, obs, name=name)
+        if native_years:
+            years = _native_obs_hindcast_years(hcst, obs, name=name)
+        else:
+            years = _common_obs_hindcast_years(hcst, obs, name=name)
         m = EnsembleRegressionMethod(clip_negative=clip_negative)
         m.fit(hcst.sel(year=years), obs.sel(year=years))
         fc = _select_forecast_year_slice(
             fcst if fcst is not None else hcst, forecast_year)
-        maps[name] = m.predict_tercile(fc, obs, threshold_source=threshold_source)
+        # native_years=False: years == every obs year (enforced by
+        # _common_obs_hindcast_years), so obs.sel(year=years) == obs; pass
+        # obs unchanged to keep this path byte-for-byte identical to before.
+        # native_years=True: years is this model's own (possibly narrower)
+        # overlap, so the climatology reference must be trimmed to match —
+        # this is what the consumer (calibrate_ereg_native_years) does.
+        obs_climatology = obs.sel(year=years) if native_years else obs
+        maps[name] = m.predict_tercile(
+            fc, obs_climatology, threshold_source=threshold_source)
         if verbose:
             print(f"[calibrate:ereg] {name}: calibrated")
     out = _combine_models(maps, combine)
@@ -417,10 +453,16 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
 def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
                      combine="mean", model="icpac_independent", backend="sklearn",
                      regularization=None, significance_mask=None, min_years=10,
+                     tercile_edges: str = "exclusive",
                      detrend: bool = False, verbose=False, **_):
     """Logistic calibration: per-model per-cell logistic of tercile occurrence on
     a scalar index → cross-model average. ``predictor`` is ``{model: index}`` and
-    ``forecast`` the matching ``{model: index_value}`` (or single values)."""
+    ``forecast`` the matching ``{model: index_value}`` (or single values).
+
+    ``tercile_edges`` (opt-in, default "exclusive"): how boundary-tied obs
+    values are classified into below/normal/above; see
+    ``deepscale.logistic._labels_from_obs``. Default reproduces the standard
+    tercile definition / legacy behavior; "inclusive" helps dry/tied cells."""
     from .logistic import logistic_forecast
 
     idx = _as_model_dict(predictor)
@@ -446,7 +488,7 @@ def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
         maps[name] = logistic_forecast(
             index, obs, fval, model=model, backend=backend,
             regularization=regularization, significance_mask=significance_mask,
-            min_years=min_years,
+            min_years=min_years, tercile_edges=tercile_edges,
         )
         if verbose:
             print(f"[calibrate:logit] {name}: fit on index")

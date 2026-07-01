@@ -49,13 +49,36 @@ def seasonal_mme(
     optimize_ensemble: bool = False,
     primary_metric: str = "rpss",
     verbose: bool = True,
+    native_years: bool = False,
 ) -> SeasonalMMEResult:
     """Run the full PyCPT-style multi-track seasonal pipeline end-to-end.
 
     See docs/superpowers/specs/2026-05-15-seasonal-mme-orchestrator-design.md
     for parameter semantics, the four-case `forecast_year` resolution rules,
     and the error-handling table.
+
+    `native_years` (opt-in, default False): when True, each model is
+    calibrated on its OWN `hcst.year ∩ obs.year` overlap instead of the
+    single global intersection across all models. Only supported for
+    `method="cca"` + `probability_aggregation="cpt_per_model"` — pooling
+    ensemble members across models with different year sets is undefined, so
+    `native_years=True` with `probability_aggregation="pooled"` raises. This
+    reproduces looping `seasonal_mme()` one model at a time (each call's own
+    global intersection = that model's overlap) and combining, in a single
+    call. Default False leaves all other behavior byte-for-byte unchanged.
     """
+    if native_years and probability_aggregation != "cpt_per_model":
+        raise ValueError(
+            "native_years=True requires probability_aggregation='cpt_per_model'; "
+            "pooling ensemble members across models with different year sets "
+            f"is undefined. Got probability_aggregation={probability_aggregation!r}."
+        )
+    if native_years and (cpt_args or {}).get("skillmask_threshold") is not None:
+        raise ValueError(
+            "native_years=True is not supported together with "
+            "cpt_args['skillmask_threshold'] (the skill mask needs a coherent "
+            "shared-obs baseline, which native per-model years do not provide)."
+        )
     if not predictor_tracks:
         raise ValueError(
             "seasonal_mme: predictor_tracks is empty; at least one track with "
@@ -83,7 +106,18 @@ def seasonal_mme(
             f"(the per-model Student-t/leverage path); got method={method!r}."
         )
 
-    years = _intersect_years(predictor_tracks, obs)
+    # native_years=True: skip the global _intersect_years floor (it would
+    # reject exactly the case this knob exists for — models whose individual
+    # overlaps with obs are fine but don't all agree). Each model gets its
+    # own obs slice below (per_model_obs); `years`/`obs_sliced` here become a
+    # "reference" set (union of the per-model native years) used only by the
+    # best-effort pooled/ensemble/skill machinery that cpt_per_model's
+    # tercile_forecast does not depend on (see per_model_obs threading below).
+    per_model_obs: dict = {}
+    if native_years:
+        years = _union_native_years(predictor_tracks, obs)
+    else:
+        years = _intersect_years(predictor_tracks, obs)
     obs_sliced = obs.sel(year=years)
     resolved_forecast_year = _resolve_forecast_year(predictor_tracks, years, forecast_year)
     resolved_tercile_method = _resolve_tercile_method(method, tercile_method)
@@ -96,8 +130,15 @@ def seasonal_mme(
     for track_name, models in predictor_tracks.items():
         for model_name, (hcst, fcst) in models.items():
             key = (track_name, model_name)
+            if native_years:
+                model_years = _native_years_for_model(
+                    track_name, model_name, hcst, obs)
+                model_obs = obs.sel(year=model_years)
+                per_model_obs[key] = model_obs
+            else:
+                model_obs = obs_sliced
             cv_hindcast, forecast_pred, m_full, levs = _per_model_cv(
-                hcst, fcst, obs_sliced,
+                hcst, fcst, model_obs,
                 method=method, cv_scheme=cv, cpt_args=cpt_args,
                 forecast_year=resolved_forecast_year, verbose=verbose,
             )
@@ -109,6 +150,25 @@ def seasonal_mme(
 
     pooled_cv = _pool_members(per_model_cv_hindcasts)
     pooled_fcst = _pool_members(per_model_forecasts)
+
+    if native_years:
+        # The pooled ensemble/skill machinery below (ensemble(), skill(),
+        # the tercile_cv fallback) is not part of cpt_per_model's
+        # tercile_forecast contract, but it still runs and must not crash.
+        # Under native_years the per-model CV hindcasts are ragged (each
+        # spans that model's own native years), so `uniform.combine()`'s
+        # plain arithmetic (`sum(arrays) / len(arrays)`) inner-joins them
+        # down to their actual intersection. Rebind obs_sliced to that same
+        # intersection so ensemble()'s internal PEV/skill calls see matching
+        # year sets instead of raising on a mismatch against the (wider)
+        # union computed above. If the per-model CV hindcasts are fully
+        # disjoint, `combined` itself degenerates to an empty year dim (same
+        # inner-join mechanism) — rebind to that same empty intersection so
+        # the two sides still agree; ensemble()/skill() handle an empty year
+        # dim without crashing (unlike a *mismatched* one).
+        cv_year_sets = [set(arr.year.values.tolist()) for arr in pooled_cv]
+        cv_intersection = sorted(set.intersection(*cv_year_sets)) if cv_year_sets else []
+        obs_sliced = obs.sel(year=cv_intersection)
 
     ensemble_result = ensemble(
         pooled_cv, obs_sliced,
@@ -128,6 +188,7 @@ def seasonal_mme(
             per_model_cv_hindcasts, per_model_methods, per_model_leverages,
             obs_sliced, fallback_forecast=ensemble_result.forecast,
             fallback_method=resolved_tercile_method,
+            per_model_obs=per_model_obs if native_years else None,
         )
     else:
         tercile_kwargs = {}
@@ -208,14 +269,28 @@ def seasonal_mme(
         # `cpt_tercile_forecast` kernel — same math the CV path uses). Boundaries
         # use the CPT convention (`_cpt_boundaries`), matching the per-model
         # tercile_cv built above so the forecast and its skill report agree.
-        t33, t67 = _cpt_spatial_boundaries(obs_sliced)
+        #
+        # native_years=False (default): boundaries/dof/s2 are computed once off
+        # the shared global `obs_sliced`/`years`, exactly as before.
+        # native_years=True: each model's boundaries/dof/s2 use that model's
+        # OWN obs slice (per_model_obs), matching the "loop one model at a
+        # time" reference semantics — each standalone seasonal_mme() call's
+        # `obs_sliced` in that loop IS that one model's native-year slice.
+        if not native_years:
+            t33, t67 = _cpt_spatial_boundaries(obs_sliced)
         per_model_maps = []
         for key, cv_pred in per_model_cv_hindcasts.items():
             track_name, model_name = key
             m = per_model_methods[key]
             fc_pred = per_model_forecasts[key]
             n_modes = int(getattr(m, "x_eof_modes_", getattr(m, "n_modes", 3)))
-            dof = len(years) - n_modes - 1
+            if native_years:
+                model_obs = per_model_obs[key]
+                t33, t67 = _cpt_spatial_boundaries(model_obs)
+                dof = len(model_obs.year) - n_modes - 1
+            else:
+                model_obs = obs_sliced
+                dof = len(years) - n_modes - 1
             if dof <= 1:
                 continue
             # Forecast predictor for this model = the input track's forecast
@@ -231,7 +306,7 @@ def seasonal_mme(
             leverage = m.leverage(fcst_predictor)
             if not np.isfinite(leverage):
                 leverage = 0.0
-            s2 = ((cv_pred - obs_sliced) ** 2).sum("year") / dof
+            s2 = ((cv_pred - model_obs) ** 2).sum("year") / dof
             per_model_maps.append(
                 cpt_tercile_forecast(fc_pred, t33, t67, s2, dofr=dof, leverage=leverage))
         if not per_model_maps:
@@ -291,7 +366,17 @@ def seasonal_mme(
         "n_members": len(per_model_forecasts),
         "forecast_year": int(resolved_forecast_year),
         "run_at": datetime.now(timezone.utc).isoformat(),
+        "native_years": native_years,
     }
+    if native_years:
+        # Under native_years, "years_used" (above) is the union across models
+        # for backward-compatible shape; this is the per-model breakdown each
+        # model actually calibrated on (mirrors calibrate_cca_per_model_years'
+        # years_used dict in the one-model-at-a-time reference loop).
+        metadata["per_model_years_used"] = {
+            f"{track}__{model}": list(per_model_obs[(track, model)].year.values)
+            for (track, model) in per_model_forecasts
+        }
 
     return SeasonalMMEResult(
         forecast=forecast_mean,
@@ -540,7 +625,8 @@ def _cpt_spatial_boundaries(obs):
 
 def _cpt_per_model_tercile_cv(per_model_cv_hindcasts, per_model_methods,
                               per_model_leverages, obs, *,
-                              fallback_forecast, fallback_method):
+                              fallback_forecast, fallback_method,
+                              per_model_obs=None):
     """Per-model CPT CV terciles averaged across models.
 
     The CV-scoring twin of the cpt_per_model forecast: each model's CV
@@ -548,16 +634,22 @@ def _cpt_per_model_tercile_cv(per_model_cv_hindcasts, per_model_methods,
     (per-model EOF count and per-year leverages), and the maps are averaged and
     renormalized exactly like the forecast. Falls back to the pooled
     construction only if no model supports CPT terciles (dof <= 1 everywhere).
+
+    `per_model_obs`: optional {key: obs_slice} override (native_years=True) —
+    each model's own obs slice, used in place of the shared `obs` for that
+    model's dof (`n`) and `to_tercile_cv` call. When None (native_years=False,
+    the default), every model uses the shared `obs`, unchanged from before.
     """
-    n = len(obs.year)
     maps = []
     for key, cv_pred in per_model_cv_hindcasts.items():
+        model_obs = per_model_obs[key] if per_model_obs is not None else obs
+        n = len(model_obs.year)
         m = per_model_methods[key]
         n_modes = int(getattr(m, "x_eof_modes_", getattr(m, "n_modes", 3)))
         if n - n_modes - 1 <= 1:
             continue
         maps.append(to_tercile_cv(
-            cv_pred, obs, method="cpt",
+            cv_pred, model_obs, method="cpt",
             leverages=per_model_leverages.get(key), n_modes=n_modes))
     if not maps:
         return to_tercile_cv(fallback_forecast, obs, method=fallback_method)
@@ -622,3 +714,48 @@ def _intersect_years(predictor_tracks, obs):
             f"Intersection: {intersection}."
         )
     return intersection
+
+
+def _native_years_for_model(track_name, model_name, hcst, obs):
+    """Return the sorted years common to `obs` and this one model's hindcast.
+
+    The native_years=True per-model counterpart to `_intersect_years`: same
+    >=5-year floor, but scoped to a single (track, model) instead of the
+    intersection across every model. Raising per-model (rather than
+    pre-checking a union) keeps the diagnostic message pinned to the model
+    that actually failed the floor.
+    """
+    obs_years = set(obs.year.values.tolist())
+    hcst_years = set(hcst.year.values.tolist())
+    intersection = sorted(obs_years & hcst_years)
+    if len(intersection) < 5:
+        raise ValueError(
+            f"seasonal_mme: native_years=True year intersection for "
+            f"{track_name}/{model_name} has only {len(intersection)} "
+            f"year(s); need at least 5. obs range: "
+            f"{(min(obs_years), max(obs_years)) if obs_years else (None, None)}. "
+            f"{track_name}/{model_name} hindcast range: "
+            f"{(min(hcst_years), max(hcst_years)) if hcst_years else (None, None)}. "
+            f"Intersection: {intersection}."
+        )
+    return intersection
+
+
+def _union_native_years(predictor_tracks, obs):
+    """Union of every model's own obs-intersected native years.
+
+    Used only as the "reference" year set for native_years=True's best-effort
+    pooled/ensemble/skill scaffolding (forecast_year fallback resolution,
+    `metadata['years_used']`, `tercile_cv`'s fallback path) — none of which
+    the cpt_per_model `tercile_forecast` this knob targets actually depends
+    on. Each model's own overlap is validated separately by
+    `_native_years_for_model`, so this never raises the <5-year floor itself
+    (a union of per-model-valid sets already has >=5 years whenever at least
+    one model does, and the per-model call raises first for one that can't).
+    """
+    obs_years = set(obs.year.values.tolist())
+    union: set = set()
+    for track_name, models in predictor_tracks.items():
+        for model_name, (hcst, _fcst) in models.items():
+            union |= obs_years & set(hcst.year.values.tolist())
+    return sorted(union)
