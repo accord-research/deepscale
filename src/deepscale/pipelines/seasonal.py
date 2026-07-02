@@ -16,6 +16,7 @@ from ..ensemble import EnsembleResult, ensemble
 from ..registry import get_method
 from ..skill import SkillReport, skill
 from ..tercile import to_tercile_cv, to_tercile, cpt_tercile_forecast
+from .._warnings import quiet_all_nan_slices
 
 _PROBABILISTIC_METHODS = frozenset({"corrdiff"})
 
@@ -35,6 +36,7 @@ class SeasonalMMEResult:
     metadata: dict = field(default_factory=dict)
 
 
+@quiet_all_nan_slices
 def seasonal_mme(
     predictor_tracks,
     obs,
@@ -314,7 +316,7 @@ def seasonal_mme(
                 "probability_aggregation='cpt_per_model': no per-model CPT "
                 "probability maps could be computed (dof<=1 for all models)."
             )
-        out = xr.concat(per_model_maps, dim="model").mean("model", skipna=True)
+        out = xr.concat(per_model_maps, dim="model", join="outer").mean("model", skipna=True)
         total = out.sum("tercile", skipna=False)
         tercile_forecast = xr.where(
             np.isfinite(total) & (total > 0), out / total, np.nan)
@@ -653,7 +655,10 @@ def _cpt_per_model_tercile_cv(per_model_cv_hindcasts, per_model_methods,
             leverages=per_model_leverages.get(key), n_modes=n_modes))
     if not maps:
         return to_tercile_cv(fallback_forecast, obs, method=fallback_method)
-    stacked = xr.concat(maps, dim="model").mean("model", skipna=True)
+    # join="outer" (xarray's current concat default, pinned explicitly): under
+    # native_years the per-model CV maps carry ragged `year` coords, so we take
+    # their union and skipna-average — a model contributes to the years it has.
+    stacked = xr.concat(maps, dim="model", join="outer").mean("model", skipna=True)
     total = stacked.sum("tercile", skipna=False)
     out = xr.where(np.isfinite(total) & (total > 0), stacked / total, np.nan)
     # Match the (year, tercile, lat, lon) ordering the pooled to_tercile_cv path

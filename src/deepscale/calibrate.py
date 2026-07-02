@@ -32,6 +32,7 @@ import xarray as xr
 
 from .indices import Index
 from .registry import get_calibrator, register_calibrator
+from ._warnings import quiet_all_nan_slices
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class LogitConfig:
     min_years: int = 10
 
 
+@quiet_all_nan_slices
 def calibrate(predictor=None, obs=None, *, method, forecast=None,
               forecast_year=None, predictor_hindcast=None,
               predictor_forecast=None, combine="mean", verbose=False,
