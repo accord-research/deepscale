@@ -19,6 +19,26 @@ _NE_COAST = _NE_ROOT / "physical" / "ne_50m_coastline.shp"
 _NE_BORDERS = _NE_ROOT / "cultural" / "ne_50m_admin_0_boundary_lines_land.shp"
 
 
+def _tercile_codes(probs, prob_bins):
+    """Integer class code per cell for a discrete tercile palette.
+
+    ``probs`` is (tercile=3, lat, lon), tercile order (below, normal, above),
+    fractional (0-1). Returns (code, valid). n = len(prob_bins)-1 bins:
+    above -> 0..n-1, normal -> n..2n-1, below -> 2n..3n-1; -1 = no valid triple.
+    """
+    valid = np.isfinite(probs).all(axis=0)
+    dom = np.argmax(np.where(np.isfinite(probs), probs, -1.0), axis=0)  # 0=below 1=normal 2=above
+    prob_pct = np.where(valid, np.max(probs, axis=0) * 100.0, np.nan)
+    n = len(prob_bins) - 1
+    pbin = np.clip(np.digitize(prob_pct, prob_bins) - 1, 0, n - 1)
+    base = {2: 0, 1: n, 0: 2 * n}
+    code = np.full(prob_pct.shape, -1, dtype=int)
+    for d, b in base.items():
+        sel = valid & (dom == d)
+        code[sel] = b + pbin[sel]
+    return code, valid
+
+
 def _new_fig(ax, figsize=(8, 5)):
     import importlib
     require_optional("matplotlib", _HINT)
@@ -134,7 +154,131 @@ def _draw_geopandas_basemap(ax, extent):
     return True
 
 
-def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip"):
+def _discrete_cmap(style):
+    import importlib
+    mcolors = importlib.import_module("matplotlib.colors")
+    palette = list(style.above_colors) + list(style.normal_colors) + list(style.below_colors) + [style.dry_color]
+    cmap = mcolors.ListedColormap(palette)
+    cmap.set_bad(style.nodata_color)
+    return cmap, len(palette)
+
+
+def _tercile_style_legend(ax, style, below_label, above_label):
+    import importlib
+    Patch = importlib.import_module("matplotlib.patches").Patch
+
+    def _weak(colors):
+        return colors[1] if len(colors) > 1 else colors[-1]
+
+    handles = [
+        Patch(facecolor="none", edgecolor="none", label=r"$\bf{Above}$"),
+        Patch(facecolor=style.above_colors[-1], label="strong"),
+        Patch(facecolor=_weak(style.above_colors), label="weak"),
+        Patch(facecolor=_weak(style.normal_colors), edgecolor="0.6", label="Near normal"),
+        Patch(facecolor="none", edgecolor="none", label=r"$\bf{Below}$"),
+        Patch(facecolor=style.below_colors[-1], label="strong"),
+        Patch(facecolor=_weak(style.below_colors), label="weak"),
+        Patch(facecolor=style.dry_color, label="Dry season"),
+    ]
+    if style.lakes:
+        handles.append(Patch(facecolor=style.lake_color, label="Lake"))
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.10),
+              ncol=4, frameon=True, framealpha=0.9, fontsize=7,
+              title="Probability of category", title_fontsize=8)
+
+
+_COUNTRY_GEOM_CACHE = {}
+
+
+def _country_geometry(names):
+    """Prepared union geometry of Natural Earth admin_0 countries matching `names`."""
+    import importlib
+    shpreader = importlib.import_module("cartopy.io.shapereader")
+    unary_union = importlib.import_module("shapely.ops").unary_union
+    prep = importlib.import_module("shapely.prepared").prep
+    key = tuple(sorted(names))
+    if key not in _COUNTRY_GEOM_CACHE:
+        rdr = shpreader.Reader(shpreader.natural_earth(
+            resolution="10m", category="cultural", name="admin_0_countries"))
+        geoms = [r.geometry for r in rdr.records()
+                 if r.attributes.get("NAME", "") in names
+                 or r.attributes.get("NAME_LONG", "") in names]
+        if not geoms:
+            raise ValueError(f"No Natural Earth countries matched names={names!r}")
+        # buffer in degrees to include coastal border cells
+        _COUNTRY_GEOM_CACHE[key] = prep(unary_union(geoms).buffer(0.3))
+    return _COUNTRY_GEOM_CACHE[key]
+
+
+def _region_masks(lat, lon, style):
+    """Boolean (nlat, nlon) region masks derived from a ``TercileStyle``.
+
+    Returns ``(dry, outside)``; each is a bool array, or ``None`` if the
+    corresponding style field is unset:
+      - ``dry``: cells to grey out, from ``style.dry_mask``.
+      - ``outside``: cells outside ``style.clip_to``.
+
+    ``style.dry_mask`` may be:
+      - a coordinate-bearing DataArray (has ``lat``/``lon`` coords): aligned to
+        the plotted grid by nearest-neighbor interpolation on coordinate VALUE,
+        so it lands on the correct geographic cells regardless of the mask's
+        resolution, registration offset, or latitude ordering. Cells outside the
+        mask's coverage (NaN after interpolation) are treated as not-dry.
+      - a bare ndarray (no coords): must match the grid shape exactly, since there
+        is no coordinate information to align it by; a mismatch raises a clear
+        ``ValueError`` instead of a raw positional-indexing failure.
+
+    Shared by ``_apply_style_masks`` (tercile codes) and ``plot_field``
+    (continuous fields) so both mask identically.
+    """
+    import importlib
+    lat = np.asarray(lat); lon = np.asarray(lon)
+    shape = (lat.shape[0], lon.shape[0])
+    dry = None
+    if style is not None and style.dry_mask is not None:
+        if hasattr(style.dry_mask, "interp"):
+            dm = style.dry_mask.astype(float).interp(
+                lat=lat, lon=lon, method="nearest").transpose("lat", "lon")
+            dry = np.asarray(dm.values) > 0.5   # NaN (outside coverage) -> not dry
+        else:
+            dry = np.asarray(style.dry_mask, dtype=bool)
+            if dry.shape != shape:
+                raise ValueError(
+                    f"dry_mask ndarray shape {dry.shape} does not match the field "
+                    f"shape {shape}; pass a coordinate-bearing xarray DataArray "
+                    f"(lat/lon) to auto-align, or match the grid."
+                )
+    outside = None
+    if style is not None and style.clip_to is not None:
+        Point = importlib.import_module("shapely.geometry").Point
+        geom = (style.clip_to if not isinstance(style.clip_to, (list, tuple))
+                else _country_geometry(list(style.clip_to)))
+        # Normalize lon to -180..180 for Natural Earth containment tests.
+        lon180 = ((lon + 180) % 360) - 180
+        inside = np.zeros(shape, dtype=bool)
+        for i, la in enumerate(lat):
+            for j, lo in enumerate(lon180):
+                if geom.contains(Point(float(lo), float(la))):
+                    inside[i, j] = True
+        outside = ~inside
+    return dry, outside
+
+
+def _apply_style_masks(code, lat, lon, style):
+    """Grey dry cells (code 3n) and mask cells outside the clip geometry (-1)."""
+    n = len(style.prob_bins) - 1
+    dry, outside = _region_masks(lat, lon, style)
+    if dry is not None:
+        # Dry cells are greyed unconditionally (matches the GHACOF reference); the
+        # clip below then restricts to the domain.
+        code[dry] = 3 * n
+    if outside is not None:
+        code[outside] = -1
+    return code
+
+
+def plot_tercile_forecast(pr_fcst, *, style=None, ax=None, title=None,
+                          variable_kind="precip", legend=True):
     """Dominant-tercile probability map (IRI/PyCPT convention).
 
     For each grid point, identifies the tercile (below/normal/above) with
@@ -157,6 +301,9 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
     Coastlines and national borders are drawn over the map when cartopy or
     geopandas (with cached Natural Earth shapefiles) is available, and quietly
     skipped otherwise. A legend below the map shows the three categories.
+
+    Lakes (`style.lakes`) are drawn only on the cartopy/geo path (when cartopy
+    is available); the geopandas fallback does not draw lakes.
 
     Input shape: (tercile=3, lat, lon), values in [0, 1] summing to 1.
     """
@@ -182,11 +329,12 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
     from .._spatial import spatial_dims
 
     lat_dim, lon_dim = spatial_dims(pr_fcst, context="plot_tercile_forecast")
-    rgb = _tercile_rgb(
-        pr_fcst.transpose("tercile", lat_dim, lon_dim).values, red_cat, blue_cat)
+    values = pr_fcst.transpose("tercile", lat_dim, lon_dim).values
     lon = pr_fcst[lon_dim].values
     lat = pr_fcst[lat_dim].values
     extent = (float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max()))
+    if style is not None and style.extent is not None:
+        extent = tuple(style.extent)
 
     if ax is None:
         fig, ax, is_geo = _make_tercile_axes(plt, extent, figsize=(8, 5.5))
@@ -194,41 +342,156 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
         fig = ax.figure
         is_geo = hasattr(ax, "coastlines")
 
-    if is_geo:
-        ccrs = importlib.import_module("cartopy.crs")
-        ax.imshow(rgb, extent=extent, origin="lower", transform=ccrs.PlateCarree())
-        _draw_cartopy_basemap(ax)
+    if style is None:
+        rgb = _tercile_rgb(values, red_cat, blue_cat)
+        if is_geo:
+            ccrs = importlib.import_module("cartopy.crs")
+            ax.imshow(rgb, extent=extent, origin="lower", transform=ccrs.PlateCarree())
+            _draw_cartopy_basemap(ax)
+        else:
+            ax.imshow(rgb, extent=extent, origin="lower", aspect="auto", zorder=1)
+            drew = _draw_geopandas_basemap(ax, extent)
+            ax.set_xlim(extent[0], extent[1]); ax.set_ylim(extent[2], extent[3])
+            ax.set_xlabel("Longitude"); ax.set_ylabel("Latitude")
+            if drew:
+                ax.grid(color="#777777", linewidth=0.3, alpha=0.5)
     else:
-        ax.imshow(rgb, extent=extent, origin="lower", aspect="auto", zorder=1)
-        drew = _draw_geopandas_basemap(ax, extent)
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
-        ax.set_xlabel("Longitude")
-        ax.set_ylabel("Latitude")
-        if drew:
-            ax.grid(color="#777777", linewidth=0.3, alpha=0.5)
+        code, _ = _tercile_codes(values, style.prob_bins)
+        cmap, npal = _discrete_cmap(style)
+        code = _apply_style_masks(code, lat, lon, style)
+        code_masked = np.ma.masked_less(code, 0)
+        if is_geo:
+            ccrs = importlib.import_module("cartopy.crs")
+            ax.pcolormesh(lon, lat, code_masked, cmap=cmap, vmin=0, vmax=npal - 1,
+                          shading="auto", transform=ccrs.PlateCarree())
+            _draw_cartopy_basemap(ax)
+            if style.lakes and is_geo:
+                cfeature = importlib.import_module("cartopy.feature")
+                ax.add_feature(cfeature.NaturalEarthFeature("physical", "lakes", "10m"),
+                               facecolor=style.lake_color, edgecolor="none", zorder=3)
+        else:
+            ax.pcolormesh(lon, lat, code_masked, cmap=cmap, vmin=0, vmax=npal - 1, shading="auto")
+            ax.set_xlim(extent[0], extent[1]); ax.set_ylim(extent[2], extent[3])
 
     ax.set_title(title or "Dominant tercile probability")
-
-    below_color = (1.0, 0.0, 0.0) if red_cat == 0 else (0.0, 0.0, 1.0)
-    above_color = (1.0, 0.0, 0.0) if red_cat == 2 else (0.0, 0.0, 1.0)
-    legend_handles = [
-        Patch(facecolor=below_color, edgecolor="black", linewidth=0.5, label=below_label),
-        Patch(facecolor="#999999",   edgecolor="black", linewidth=0.5, label="Normal"),
-        Patch(facecolor=above_color, edgecolor="black", linewidth=0.5, label=above_label),
-    ]
-    ax.legend(
-        handles=legend_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.10),
-        ncol=3,
-        frameon=True,
-        framealpha=0.9,
-        fontsize=8,
-        title="Dominant tercile  (intensity = confidence)",
-        title_fontsize=8,
-    )
+    if legend and style is None:
+        below_color = (1.0, 0.0, 0.0) if red_cat == 0 else (0.0, 0.0, 1.0)
+        above_color = (1.0, 0.0, 0.0) if red_cat == 2 else (0.0, 0.0, 1.0)
+        legend_handles = [
+            Patch(facecolor=below_color, edgecolor="black", linewidth=0.5, label=below_label),
+            Patch(facecolor="#999999",   edgecolor="black", linewidth=0.5, label="Normal"),
+            Patch(facecolor=above_color, edgecolor="black", linewidth=0.5, label=above_label),
+        ]
+        ax.legend(
+            handles=legend_handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.10),
+            ncol=3,
+            frameon=True,
+            framealpha=0.9,
+            fontsize=8,
+            title="Dominant tercile  (intensity = confidence)",
+            title_fontsize=8,
+        )
+    elif legend and style is not None:
+        _tercile_style_legend(ax, style, below_label, above_label)
     return fig
+
+
+def plot_field(field, *, style=None, ax=None, cmap="RdBu_r", vmin=None, vmax=None,
+               center=None, title=None, grey_dry=True):
+    """Continuous (lat, lon) field on the same styled basemap as ``plot_terciles``.
+
+    Draws ``field`` with ``pcolormesh`` using the identical map extent,
+    coastlines / borders / gridlines, dry-cell greying, country clip, and lakes
+    that ``plot_terciles`` applies for the same ``style`` -- so a difference or
+    anomaly panel lines up cell-for-cell with the tercile panels beside it. The
+    colors are the caller's (any Matplotlib ``cmap``); the framing and masks come
+    entirely from ``style``. Region-agnostic: nothing here encodes a region.
+
+    ``cmap`` / ``vmin`` / ``vmax`` are the usual diverging-map controls; pass
+    ``center`` instead to anchor a ``TwoSlopeNorm`` at a value (e.g. 0). Set
+    ``grey_dry=False`` to leave dry cells transparent rather than greyed.
+
+    Returns the Matplotlib mappable, for ``fig.colorbar``.
+    """
+    import importlib
+    require_optional("matplotlib", _HINT)
+    plt = importlib.import_module("matplotlib.pyplot")
+    from .._spatial import spatial_dims
+
+    lat_dim, lon_dim = spatial_dims(field, context="plot_field")
+    fld = field.transpose(lat_dim, lon_dim)
+    lat = np.asarray(fld[lat_dim].values)
+    lon = np.asarray(fld[lon_dim].values)
+    values = np.array(fld.values, dtype=float)
+    extent = (float(lon.min()), float(lon.max()), float(lat.min()), float(lat.max()))
+    if style is not None and style.extent is not None:
+        extent = tuple(style.extent)
+
+    if ax is None:
+        fig, ax, is_geo = _make_tercile_axes(plt, extent, figsize=(8, 5.5))
+    else:
+        fig = ax.figure
+        is_geo = hasattr(ax, "coastlines")
+        if is_geo:
+            ccrs = importlib.import_module("cartopy.crs")
+            ax.set_extent(extent, crs=ccrs.PlateCarree())
+
+    dry, outside = _region_masks(lat, lon, style) if style is not None else (None, None)
+    if outside is not None:
+        values[outside] = np.nan            # outside the clip -> nodata (transparent)
+    if grey_dry and dry is not None:
+        values[dry] = np.nan                # dry -> drawn as grey by the overlay below
+    masked = np.ma.masked_invalid(values)
+
+    norm = None
+    if center is not None:
+        TwoSlopeNorm = importlib.import_module("matplotlib.colors").TwoSlopeNorm
+        lo = vmin if vmin is not None else float(np.nanmin(values))
+        hi = vmax if vmax is not None else float(np.nanmax(values))
+        norm = TwoSlopeNorm(vmin=lo, vcenter=center, vmax=hi)
+    Colormap = importlib.import_module("matplotlib.colors").Colormap
+    cmap_obj = cmap.copy() if isinstance(cmap, Colormap) else plt.get_cmap(cmap).copy()
+    if style is not None:
+        cmap_obj.set_bad(style.nodata_color)   # clipped/outside cells render as nodata
+    kw = dict(cmap=cmap_obj, shading="auto")
+    if norm is not None:
+        kw["norm"] = norm
+    else:
+        kw["vmin"] = vmin; kw["vmax"] = vmax
+
+    def _grey_overlay():
+        if not (grey_dry and dry is not None):
+            return
+        ListedColormap = importlib.import_module("matplotlib.colors").ListedColormap
+        cells = (dry & ~outside) if outside is not None else dry
+        grey = np.where(cells, 1.0, np.nan)
+        gkw = dict(cmap=ListedColormap([style.dry_color]), vmin=0, vmax=1,
+                   shading="auto", zorder=2)
+        if is_geo:
+            ccrs = importlib.import_module("cartopy.crs")
+            ax.pcolormesh(lon, lat, np.ma.masked_invalid(grey),
+                          transform=ccrs.PlateCarree(), **gkw)
+        else:
+            ax.pcolormesh(lon, lat, np.ma.masked_invalid(grey), **gkw)
+
+    if is_geo:
+        ccrs = importlib.import_module("cartopy.crs")
+        im = ax.pcolormesh(lon, lat, masked, transform=ccrs.PlateCarree(), **kw)
+        _grey_overlay()
+        _draw_cartopy_basemap(ax)
+        if style is not None and style.lakes:
+            cfeature = importlib.import_module("cartopy.feature")
+            ax.add_feature(cfeature.NaturalEarthFeature("physical", "lakes", "10m"),
+                           facecolor=style.lake_color, edgecolor="none", zorder=3)
+    else:
+        im = ax.pcolormesh(lon, lat, masked, **kw)
+        _grey_overlay()
+        ax.set_xlim(extent[0], extent[1]); ax.set_ylim(extent[2], extent[3])
+
+    ax.set_title(title or "")
+    return im
 
 
 def plot_deterministic_forecast(det_fcst, *, ax=None, title=None,

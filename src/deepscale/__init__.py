@@ -10,6 +10,7 @@ from .indices import Index
 from .calibrate import calibrate, LogitConfig
 from .io import write_terciles, tercile_mae
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
+from .plotting.forecasts import plot_field
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -36,4 +37,5 @@ __all__ = [
     "write_terciles",
     "tercile_mae",
     "plot_terciles",
+    "plot_field",
 ]
