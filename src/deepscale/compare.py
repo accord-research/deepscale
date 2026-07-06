@@ -68,7 +68,7 @@ class ComparisonReport:
         figure via fig.savefig(path).
         """
         from ._optional import require_optional
-        require_optional("matplotlib", "pip install deepscale[plotting]")
+        require_optional("matplotlib", "pip install accord-deepscale[plotting]")
         import matplotlib.pyplot as plt
 
         df = self.to_table()
@@ -107,7 +107,7 @@ class ComparisonReport:
         for which all methods have a spatial map.
         """
         from ._optional import require_optional
-        require_optional("matplotlib", "pip install deepscale[plotting]")
+        require_optional("matplotlib", "pip install accord-deepscale[plotting]")
         from matplotlib.backends.backend_pdf import PdfPages
         from .reporting import _pages
 

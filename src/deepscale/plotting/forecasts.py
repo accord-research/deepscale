@@ -6,7 +6,7 @@ import numpy as np
 from .._optional import require_optional
 
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 # Dominant-tercile color saturation: probability above 1/3 at which
 # the color reaches full intensity. 0.37 = 70% probability cap.

@@ -3,7 +3,7 @@
 This subpackage's functions require optional dependencies (matplotlib,
 cartopy, rioxarray) that aren't installed by default. Install them with:
 
-    pip install deepscale[plotting]
+    pip install accord-deepscale[plotting]
 
 Importing this package itself does NOT load the optional deps; each
 function calls `deepscale._optional.require_optional` lazily.

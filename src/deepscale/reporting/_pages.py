@@ -31,7 +31,7 @@ def _style_for(metric):
 
 from .._optional import require_optional
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 
 _LETTER_W, _LETTER_H = 8.5, 11.0  # US-letter portrait, inches

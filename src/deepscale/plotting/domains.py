@@ -3,7 +3,7 @@
 from .._optional import require_optional
 
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 
 def plot_domains(predictor_extent, predictand_extent, *, ax=None, title=None):
