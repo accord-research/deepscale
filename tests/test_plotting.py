@@ -219,6 +219,45 @@ def test_plot_field_honors_nodata_color():
     plt.close(fig)
 
 
+def _tercile_da(above, lat, lon):
+    p = np.zeros((3, len(lat), len(lon)))
+    p[2] = above; p[1] = 0.3; p[0] = 1.0 - above - 0.3
+    return xr.DataArray(p, dims=["tercile", "lat", "lon"],
+                        coords={"tercile": ["below", "normal", "above"], "lat": lat, "lon": lon})
+
+
+def test_plot_tercile_comparison_smoke():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
+    from deepscale.plotting.forecasts import plot_tercile_comparison
+    lat = np.linspace(-5, 5, 6); lon = np.linspace(30, 45, 8)
+    fc, ref = _tercile_da(0.5, lat, lon), _tercile_da(0.4, lat, lon)
+    fig, axes = plt.subplots(1, 3, subplot_kw={"projection": ccrs.PlateCarree()})
+    out_axes, diff_im = plot_tercile_comparison(
+        fc, ref, style=_ghacof_style(), axes=axes,
+        labels=("A", "B", "A - B"), diff_cmap="BrBG", diff_limit=40)
+    assert len(out_axes) == 3
+    assert diff_im is not None and hasattr(diff_im, "get_array")   # mappable for a colorbar
+    assert axes[2].get_title() == "A - B"
+    plt.close(fig)
+
+
+def test_plot_tercile_comparison_regrids_reference_on_different_grid():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
+    from deepscale.plotting.forecasts import plot_tercile_comparison
+    fc = _tercile_da(0.5, np.linspace(-5, 5, 6), np.linspace(30, 45, 8))     # coarse
+    ref = _tercile_da(0.4, np.linspace(-5, 5, 12), np.linspace(30, 45, 16))  # finer grid
+    fig, axes = plt.subplots(1, 3, subplot_kw={"projection": ccrs.PlateCarree()})
+    _, diff_im = plot_tercile_comparison(fc, ref, axes=axes)   # must regrid ref -> fc, not error
+    assert diff_im is not None
+    plt.close(fig)
+
+
 def test_region_masks_dry_and_clip():
     pytest.importorskip("shapely")
     from deepscale.plotting.forecasts import _region_masks

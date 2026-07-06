@@ -494,6 +494,84 @@ def plot_field(field, *, style=None, ax=None, cmap="RdBu_r", vmin=None, vmax=Non
     return im
 
 
+def plot_tercile_comparison(forecast, reference, *, style=None, axes=None,
+                            labels=("forecast", "reference", "difference"),
+                            diff_cmap="BrBG", diff_limit=40.0, title=None):
+    """Three-panel comparison of two tercile forecasts and their difference.
+
+    Draws ``forecast`` and ``reference`` with ``plot_terciles`` and, in the third
+    panel, their signed tercile-*tilt* difference via ``plot_field`` -- so all
+    three panels share the same extent, masks, and basemap. The tilt is
+    ``P(above) - P(below)``; the difference is ``forecast - reference`` in
+    percentage points, with ``reference`` regridded onto the forecast grid first.
+    With a diverging ``diff_cmap`` (e.g. brown-to-green), positive means the
+    forecast leans wetter than the reference.
+
+    Region-agnostic: the roster of forecasts and any file loading stay with the
+    caller; this only renders one comparison row.
+
+    Parameters
+    ----------
+    forecast, reference : xr.DataArray
+        Tercile probabilities, dims ``(tercile, lat, lon)`` (tercile ordered
+        below, normal, above). ``reference`` is regridded onto the forecast grid.
+    style : TercileStyle or None
+        Applied to all three panels (palette on the forecasts; extent/masks on all).
+    axes : sequence of 3 axes or None
+        Three (cartopy) axes to draw into; if None, a 1x3 figure is created.
+    labels : (str, str, str)
+        Panel titles for forecast, reference, and difference.
+    diff_cmap : str or Colormap
+        Colormap for the difference panel.
+    diff_limit : float
+        Symmetric color limit for the difference (``vmin=-diff_limit``, ``vmax=+``).
+    title : str or None
+        Optional suptitle, used only when this function creates the figure.
+
+    Returns
+    -------
+    (axes, diff_mappable)
+        The three axes and the difference panel's mappable, e.g. for a shared
+        ``fig.colorbar``.
+    """
+    import importlib
+    require_optional("matplotlib", _HINT)
+    plt = importlib.import_module("matplotlib.pyplot")
+    from .._spatial import spatial_dims
+
+    if axes is None:
+        try:
+            ccrs = importlib.import_module("cartopy.crs")
+            fig, axes = plt.subplots(1, 3, figsize=(13, 4.2),
+                                     subplot_kw={"projection": ccrs.PlateCarree()})
+        except Exception:
+            fig, axes = plt.subplots(1, 3, figsize=(13, 4.2))
+    else:
+        fig = axes[0].figure
+
+    lab_f, lab_r, lab_d = labels
+    plot_tercile_forecast(forecast, style=style, ax=axes[0], legend=False, title=lab_f)
+    plot_tercile_forecast(reference, style=style, ax=axes[1], legend=False, title=lab_r)
+
+    # Signed tercile-tilt difference, forecast minus reference, in percentage points.
+    lat_dim, lon_dim = spatial_dims(forecast, context="plot_tercile_comparison")
+    r_lat, r_lon = spatial_dims(reference, context="plot_tercile_comparison")
+    ref_al = (reference.rename({r_lat: lat_dim, r_lon: lon_dim})
+              if (r_lat, r_lon) != (lat_dim, lon_dim) else reference)
+    ref_on_fc = ref_al.interp({lat_dim: forecast[lat_dim], lon_dim: forecast[lon_dim]})
+
+    def _tilt(p):   # P(above) - P(below); positional so string/int tercile coords both work
+        return p.isel(tercile=2) - p.isel(tercile=0)
+
+    signed = (_tilt(forecast) - _tilt(ref_on_fc)) * 100.0
+    diff_im = plot_field(signed, style=style, ax=axes[2], cmap=diff_cmap,
+                         vmin=-diff_limit, vmax=diff_limit, title=lab_d)
+
+    if title:
+        fig.suptitle(title)
+    return axes, diff_im
+
+
 def plot_deterministic_forecast(det_fcst, *, ax=None, title=None,
                                 cmap="RdBu_r", center=None):
     """Single-panel pcolormesh of a deterministic field. Input: (lat, lon)."""

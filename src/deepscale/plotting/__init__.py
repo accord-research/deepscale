@@ -14,6 +14,7 @@ from .skill import plot_skill_maps
 from .forecasts import (
     plot_tercile_forecast,
     plot_field,
+    plot_tercile_comparison,
     plot_deterministic_forecast,
     plot_exceedance_probability,
     plot_flex_pdf,
@@ -27,6 +28,7 @@ __all__ = [
     "plot_skill_maps",
     "plot_tercile_forecast",
     "plot_field",
+    "plot_tercile_comparison",
     "plot_deterministic_forecast",
     "plot_exceedance_probability",
     "plot_flex_pdf",
