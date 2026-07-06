@@ -22,6 +22,78 @@ resolution-markers = [
 overrides = [{ name = "zarr", specifier = ">=3.1.0" }]
 
 [[package]]
+name = "accord-deepscale"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "cfgrib" },
+    { name = "eccodeslib" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scikit-learn" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "statsmodels" },
+    { name = "tqdm" },
+    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "xarray", version = "2026.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "matplotlib" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pyyaml" },
+]
+plot = [
+    { name = "matplotlib" },
+]
+plotting = [
+    { name = "cartopy" },
+    { name = "matplotlib" },
+    { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "rioxarray", version = "0.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+validation = [
+    { name = "matplotlib" },
+    { name = "python-cmethods" },
+    { name = "pyyaml" },
+    { name = "scikit-downscale" },
+    { name = "scikit-learn" },
+    { name = "setuptools" },
+    { name = "xsdba" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cartopy", marker = "extra == 'plotting'", specifier = ">=0.22" },
+    { name = "cfgrib", specifier = ">=0.9.15.1" },
+    { name = "eccodeslib", specifier = ">=2.46.2.19" },
+    { name = "matplotlib", marker = "extra == 'dev'" },
+    { name = "matplotlib", marker = "extra == 'plot'" },
+    { name = "matplotlib", marker = "extra == 'plotting'", specifier = ">=3.7" },
+    { name = "matplotlib", marker = "extra == 'validation'", specifier = ">=3.7" },
+    { name = "numpy" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "python-cmethods", marker = "extra == 'validation'" },
+    { name = "pyyaml", marker = "extra == 'dev'" },
+    { name = "pyyaml", marker = "extra == 'validation'" },
+    { name = "rioxarray", marker = "extra == 'plotting'" },
+    { name = "scikit-downscale", marker = "extra == 'validation'" },
+    { name = "scikit-learn" },
+    { name = "scikit-learn", marker = "extra == 'validation'", specifier = "<1.6" },
+    { name = "scipy" },
+    { name = "setuptools", marker = "extra == 'validation'", specifier = "<80" },
+    { name = "statsmodels" },
+    { name = "tqdm" },
+    { name = "xarray" },
+    { name = "xsdba", marker = "extra == 'validation'" },
+]
+provides-extras = ["plot", "plotting", "dev", "validation"]
+
+[[package]]
 name = "affine"
 version = "2.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -738,78 +810,6 @@ array = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-
-[[package]]
-name = "deepscale"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "cfgrib" },
-    { name = "eccodeslib" },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "scikit-learn" },
-    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "statsmodels" },
-    { name = "tqdm" },
-    { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "xarray", version = "2026.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "matplotlib" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pyyaml" },
-]
-plot = [
-    { name = "matplotlib" },
-]
-plotting = [
-    { name = "cartopy" },
-    { name = "matplotlib" },
-    { name = "rioxarray", version = "0.19.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "rioxarray", version = "0.22.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
-validation = [
-    { name = "matplotlib" },
-    { name = "python-cmethods" },
-    { name = "pyyaml" },
-    { name = "scikit-downscale" },
-    { name = "scikit-learn" },
-    { name = "setuptools" },
-    { name = "xsdba" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cartopy", marker = "extra == 'plotting'", specifier = ">=0.22" },
-    { name = "cfgrib", specifier = ">=0.9.15.1" },
-    { name = "eccodeslib", specifier = ">=2.46.2.19" },
-    { name = "matplotlib", marker = "extra == 'dev'" },
-    { name = "matplotlib", marker = "extra == 'plot'" },
-    { name = "matplotlib", marker = "extra == 'plotting'", specifier = ">=3.7" },
-    { name = "matplotlib", marker = "extra == 'validation'", specifier = ">=3.7" },
-    { name = "numpy" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "python-cmethods", marker = "extra == 'validation'" },
-    { name = "pyyaml", marker = "extra == 'dev'" },
-    { name = "pyyaml", marker = "extra == 'validation'" },
-    { name = "rioxarray", marker = "extra == 'plotting'" },
-    { name = "scikit-downscale", marker = "extra == 'validation'" },
-    { name = "scikit-learn" },
-    { name = "scikit-learn", marker = "extra == 'validation'", specifier = "<1.6" },
-    { name = "scipy" },
-    { name = "setuptools", marker = "extra == 'validation'", specifier = "<80" },
-    { name = "statsmodels" },
-    { name = "tqdm" },
-    { name = "xarray" },
-    { name = "xsdba", marker = "extra == 'validation'" },
-]
-provides-extras = ["plot", "plotting", "dev", "validation"]
 
 [[package]]
 name = "eccodes"

@@ -44,5 +44,11 @@ issuances/
 
 # Local session / tooling artifacts (Claude Code, superpowers, ad-hoc dumps)
 .superpowers/
+docs/superpowers/
 .old_claude_env
 github-issues.json
+
+# Credential files (never commit)
+.cdsapirc
+.ecmwfapirc
+.netrc
