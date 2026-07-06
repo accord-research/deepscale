@@ -139,6 +139,230 @@ def test_to_0_360_shifts_western_hemisphere_geometry():
     assert shifted.geometry.iloc[1].bounds[0] == 30.0    # east left untouched
 
 
+def test_tercile_codes_maps_dominant_category_and_bin():
+    from deepscale.plotting.forecasts import _tercile_codes
+    prob_bins = [33.3, 40, 50, 60, 70, 100.01]   # n = 5 bins
+    # one above-dominant cell at 65% (bin index 3), one below-dominant at 45% (bin 1)
+    probs = np.array([
+        [[0.20, 0.45]],   # below
+        [[0.15, 0.30]],   # normal
+        [[0.65, 0.25]],   # above
+    ], dtype=float)
+    code, valid = _tercile_codes(probs, prob_bins)
+    assert valid.all()
+    # above base 0 + bin 3 = 3 ; below base 2*5=10 + bin 1 = 11
+    assert code[0, 0] == 3
+    assert code[0, 1] == 11
+
+
+def test_tercile_codes_marks_all_nan_cell_invalid():
+    from deepscale.plotting.forecasts import _tercile_codes
+    probs = np.full((3, 1, 1), np.nan)
+    code, valid = _tercile_codes(probs, [33.3, 40, 50, 60, 70, 100.01])
+    assert not valid[0, 0]
+    assert code[0, 0] == -1
+
+
+def _ghacof_style():
+    from deepscale.plotting import TercileStyle
+    return TercileStyle(
+        below_colors=["#fcf3c8", "#fae678", "#f8d808", "#e6b400", "#d49e00"],
+        normal_colors=["#eefcff", "#e7f8f8", "#d6efef", "#c7e8e8", "#c7e8e8"],
+        above_colors=["#c9f5c2", "#38f838", "#34c818", "#38a808", "#188c08"],
+        prob_bins=[33.3, 40, 50, 60, 70, 100.01],
+    )
+
+
+def test_plot_terciles_styled_smoke():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_tercile_forecast
+    lat = np.linspace(-5, 5, 6); lon = np.linspace(30, 45, 8)
+    probs = np.zeros((3, 6, 8)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    pr = xr.DataArray(probs, dims=["tercile", "lat", "lon"],
+                      coords={"tercile": ["below", "normal", "above"], "lat": lat, "lon": lon})
+    fig = plot_tercile_forecast(pr, style=_ghacof_style(), legend=True, title="styled")
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_field_smoke_returns_mappable():
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("cartopy")
+    import matplotlib.pyplot as plt
+    import cartopy.crs as ccrs
+    from deepscale.plotting.forecasts import plot_field
+    lat = np.linspace(-5, 5, 6); lon = np.linspace(30, 45, 8)
+    field = xr.DataArray(np.linspace(-40, 40, 48).reshape(6, 8),
+                         dims=["lat", "lon"], coords={"lat": lat, "lon": lon})
+    fig, ax = plt.subplots(subplot_kw={"projection": ccrs.PlateCarree()})
+    im = plot_field(field, style=_ghacof_style(), ax=ax, cmap="BrBG",
+                    vmin=-40, vmax=40, title="difference")
+    assert im is not None and hasattr(im, "get_array")   # a Matplotlib mappable
+    plt.close(fig)
+
+
+def test_plot_field_honors_nodata_color():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import to_rgba
+    from deepscale.plotting.forecasts import plot_field
+    from deepscale.plotting import TercileStyle
+    lat = np.linspace(-5, 5, 4); lon = np.linspace(30, 40, 4)
+    field = xr.DataArray(np.zeros((4, 4)), dims=["lat", "lon"],
+                         coords={"lat": lat, "lon": lon})
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3, 40, 50, 60, 70, 100.01], nodata_color="#123456")
+    fig, ax = plt.subplots()   # plain axes: exercises the non-geo path
+    im = plot_field(field, style=style, ax=ax, cmap="BrBG")
+    assert im.get_cmap().get_bad() == pytest.approx(to_rgba("#123456"))
+    plt.close(fig)
+
+
+def test_region_masks_dry_and_clip():
+    pytest.importorskip("shapely")
+    from deepscale.plotting.forecasts import _region_masks
+    from deepscale.plotting import TercileStyle
+    lat = np.array([0.0, 1.0]); lon = np.array([37.0, 200.0])   # 37E in Kenya, 200E mid-Pacific
+    dry = np.zeros((2, 2), dtype=bool); dry[0, 0] = True
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3, 40, 50, 60, 70, 100.01], dry_mask=dry, clip_to=["Kenya"])
+    dry_out, outside = _region_masks(lat, lon, style)
+    assert dry_out[0, 0] and not dry_out[1, 1]     # dry mask preserved
+    assert outside[0, 1]                            # 200E ocean, outside Kenya
+    assert not outside[0, 0]                        # 37E / 0N is inside Kenya
+
+
+def test_apply_style_masks_dry_and_clip():
+    pytest.importorskip("shapely")
+    import numpy as np
+    from deepscale.plotting.forecasts import _apply_style_masks, _tercile_codes
+    from deepscale.plotting import TercileStyle
+    lat = np.array([0.0, 1.0]); lon = np.array([37.0, 200.0])   # 37E in Kenya, 200E mid-Pacific
+    probs = np.zeros((3, 2, 2)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    code, valid = _tercile_codes(probs, [33.3, 40, 50, 60, 70, 100.01])
+    dry = np.zeros((2, 2), dtype=bool); dry[0, 0] = True
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3,40,50,60,70,100.01], dry_mask=dry, clip_to=["Kenya"])
+    out = _apply_style_masks(code.copy(), lat, lon, style)
+    assert out[0, 0] == 15          # dry code = 3*5
+    assert out[0, 1] == -1          # 200E is ocean, outside Kenya -> masked
+
+
+def test_apply_style_masks_raises_on_unknown_country():
+    pytest.importorskip("shapely")
+    pytest.importorskip("cartopy")
+    from deepscale.plotting.forecasts import _country_geometry
+    with pytest.raises(ValueError):
+        _country_geometry(["Nonexististan"])
+
+
+def test_apply_style_masks_clip_wins_over_dry():
+    """A cell that is both dry and outside the clip geometry must end up -1:
+    the clip is applied after the dry paint, not before."""
+    pytest.importorskip("shapely")
+    pytest.importorskip("cartopy")
+    import numpy as np
+    from deepscale.plotting.forecasts import _apply_style_masks, _tercile_codes
+    from deepscale.plotting import TercileStyle
+    lat = np.array([0.0, 1.0]); lon = np.array([37.0, 200.0])   # 37E in Kenya, 200E mid-Pacific (ocean)
+    probs = np.zeros((3, 2, 2)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    code, valid = _tercile_codes(probs, [33.3, 40, 50, 60, 70, 100.01])
+    dry = np.zeros((2, 2), dtype=bool); dry[0, 1] = True   # 200E marked dry, but it's outside Kenya
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3,40,50,60,70,100.01], dry_mask=dry, clip_to=["Kenya"])
+    out = _apply_style_masks(code.copy(), lat, lon, style)
+    assert out[0, 1] == -1          # clip wins over dry, not 15
+
+
+def test_apply_style_masks_aligns_dataarray_mask_on_different_grid():
+    """A coordinate-bearing dry_mask on a DIFFERENT grid than the plotted field
+    must be aligned by coordinate value (nearest), not raw positional indexing.
+
+    Regression test for IndexError: boolean index did not match indexed array,
+    raised when a dry_mask built on one grid was applied to a field on another.
+    """
+    pytest.importorskip("shapely")
+    from deepscale.plotting.forecasts import _apply_style_masks, _tercile_codes
+    from deepscale.plotting import TercileStyle
+
+    # Mask grid: finer resolution than the field, lat -10..10 step 1. lon_mask
+    # spans wider than the field's lon so nearest-neighbor stays in-bounds.
+    lat_mask = np.arange(-10, 11, 1, dtype=float)
+    lon_mask = np.array([20.0, 30.0, 40.0, 50.0])
+    mask_vals = np.broadcast_to((lat_mask >= 2.0)[:, None], (lat_mask.size, lon_mask.size))
+    dry_mask = xr.DataArray(mask_vals, dims=["lat", "lon"],
+                            coords={"lat": lat_mask, "lon": lon_mask})
+
+    # Field grid: coarser resolution AND lon-offset from the mask grid -> shapes differ.
+    lat = np.arange(-10, 11, 2, dtype=float)
+    lon = np.array([32.0, 42.0])
+    probs = np.zeros((3, lat.size, lon.size))
+    probs[2] = 0.9; probs[1] = 0.07; probs[0] = 0.03
+    code, valid = _tercile_codes(probs, [33.3, 40, 50, 60, 70, 100.01])
+    assert dry_mask.shape != code.shape   # confirm the grids genuinely differ
+
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3,40,50,60,70,100.01], dry_mask=dry_mask, clip_to=None)
+
+    out = _apply_style_masks(code.copy(), lat, lon, style)   # must not raise IndexError
+
+    for i, la in enumerate(lat):
+        for j in range(lon.size):
+            if la >= 2.0:
+                assert out[i, j] == 15   # geographically dry -> painted dry (3*n, n=5)
+            else:
+                assert out[i, j] != 15   # geographically not dry -> left as tercile code
+
+
+def test_apply_style_masks_ndarray_shape_mismatch_raises():
+    """A bare ndarray dry_mask has no coordinates to align by, so a shape
+    mismatch against the plotted field must raise a clear error instead of
+    a raw positional-indexing IndexError."""
+    pytest.importorskip("shapely")
+    from deepscale.plotting.forecasts import _apply_style_masks, _tercile_codes
+    from deepscale.plotting import TercileStyle
+    lat = np.array([0.0, 1.0, 2.0]); lon = np.array([37.0, 40.0])
+    probs = np.zeros((3, 3, 2)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    code, valid = _tercile_codes(probs, [33.3, 40, 50, 60, 70, 100.01])
+    dry = np.zeros((2, 2), dtype=bool)   # wrong shape: field is (3, 2)
+    style = TercileStyle(below_colors=["a"]*5, normal_colors=["a"]*5, above_colors=["a"]*5,
+                         prob_bins=[33.3,40,50,60,70,100.01], dry_mask=dry, clip_to=None)
+    with pytest.raises(ValueError):
+        _apply_style_masks(code.copy(), lat, lon, style)
+
+
+def test_plot_terciles_no_style_still_works():
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_tercile_forecast
+    lat = np.linspace(-5, 5, 6); lon = np.linspace(30, 45, 8)
+    probs = np.zeros((3, 6, 8)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    pr = xr.DataArray(probs, dims=["tercile", "lat", "lon"],
+                      coords={"tercile": ["below", "normal", "above"], "lat": lat, "lon": lon})
+    fig = plot_tercile_forecast(pr)   # no style -> legacy path
+    assert fig is not None
+    plt.close(fig)
+
+
+def test_plot_terciles_styled_single_bin_legend():
+    """A valid single-bin TercileStyle (n=1) must not IndexError in the legend's
+    'weak' swatch, which used to index colors[1] unconditionally."""
+    pytest.importorskip("matplotlib")
+    import matplotlib.pyplot as plt
+    from deepscale.plotting.forecasts import plot_tercile_forecast
+    from deepscale.plotting import TercileStyle
+    lat = np.linspace(-5, 5, 6); lon = np.linspace(30, 45, 8)
+    probs = np.zeros((3, 6, 8)); probs[2] = 0.6; probs[1] = 0.25; probs[0] = 0.15
+    pr = xr.DataArray(probs, dims=["tercile", "lat", "lon"],
+                      coords={"tercile": ["below", "normal", "above"], "lat": lat, "lon": lon})
+    style = TercileStyle(below_colors=["#f8d808"], normal_colors=["#eefcff"],
+                         above_colors=["#38f838"], prob_bins=[33.3, 100.01])
+    fig = plot_tercile_forecast(pr, style=style, legend=True)
+    assert fig is not None
+    plt.close(fig)
+
+
 def test_plot_deterministic_forecast_smoke():
     pytest.importorskip("matplotlib")
     import matplotlib.pyplot as plt
