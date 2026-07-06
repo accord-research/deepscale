@@ -150,7 +150,7 @@ def main() -> int:
         predictor_forecast=sst_fcst,
         method=ds.LogitConfig(
             index=wvg,
-            model="icpac_independent",
+            model="independent_binomial",
             predictor_level="model_mean",
             detrend=False,
             significance=None,

@@ -45,7 +45,7 @@ class LogitConfig:
     """
 
     index: Index
-    model: str = "icpac_independent"
+    model: str = "independent_binomial"
     predictor_level: str = "model_mean"
     detrend: bool = False
     significance: float | None = None
@@ -453,7 +453,7 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
 
 @register_calibrator("logit")
 def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
-                     combine="mean", model="icpac_independent", backend="sklearn",
+                     combine="mean", model="independent_binomial", backend="sklearn",
                      regularization=None, significance_mask=None, min_years=10,
                      tercile_edges: str = "exclusive",
                      detrend: bool = False, verbose=False, **_):
