@@ -18,6 +18,9 @@ resolution-markers = [
     "(python_full_version < '3.11' and platform_machine != 'ARM64') or (python_full_version < '3.11' and sys_platform != 'win32')",
 ]
 
+[manifest]
+overrides = [{ name = "zarr", specifier = ">=3.1.0" }]
+
 [[package]]
 name = "affine"
 version = "2.4.0"
