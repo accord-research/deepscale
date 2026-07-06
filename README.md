@@ -1,104 +1,103 @@
 # DeepScale
 
-**Modular downscaling, calibration, and verification for seasonal forecasts.**
+Modular downscaling, calibration, and verification for seasonal climate forecasts.
 
-DeepScale turns coarse GCM forecasts and fine-resolution observations into calibrated, high-resolution forecast products with reproducible skill evaluation.
+DeepScale turns coarse global-model (GCM) forecasts and fine-resolution observations into calibrated, high-resolution forecast products, and scores them with cross-validated skill metrics. It operates on xarray arrays and is agnostic to where the data came from, so it pairs naturally with a data layer like [Rosetta](https://github.com/accord-research/rosetta) but does not require it.
 
-## Why this architecture
+Downscaling methods, skill metrics, and ensemble strategies are looked up by name from a registry, so you select them with plain strings and can add new ones without changing the orchestration code.
 
-- **Method-agnostic core:** downscaling methods plug into a shared interface.
-- **Composable workflow:** optimize, ensemble, and skill reuse common building blocks.
-- **Extensible registry model:** add methods/metrics/strategies incrementally.
-- **xarray-native contract:** interoperates cleanly with Rosetta outputs and downstream tools.
-
-## Quickstart
+## Installation
 
 ```bash
-git clone https://github.com/jataware/deepscale.git
-cd deepscale
-uv sync
+pip install accord-deepscale
 ```
 
-To run the end-to-end example (which uses Rosetta for data acquisition), you also need Rosetta:
+The distribution is published as `accord-deepscale`; the import name is `deepscale`:
+
+```python
+import deepscale
+```
+
+The shapefile and region-clipping helpers additionally require Rosetta:
 
 ```bash
-cd ..
-git clone https://github.com/jataware/rosetta.git
-cd rosetta
-uv sync
+pip install accord-rosetta
 ```
 
-Then from the parent directory:
-
-```bash
-python deepscale/examples/demo_forecast.py
-```
-
-See [Example workflow](#example-workflow) below for details on what this demo does and CDS prerequisites.
+DeepScale requires Python 3.10 or newer.
 
 ## Core API
 
 ```python
 import deepscale
 
-result = deepscale.downscale(gcm, obs, method="bcsd", ...)
-probs = deepscale.calibrate(predictor, obs, method="ereg", ...)
-best = deepscale.optimize(gcm, obs, methods=["bcsd", "cca"], ...)
-mme = deepscale.ensemble([best_gcm1, best_gcm2], obs, strategy="uniform")
+# Bias-correct and downscale one model against observations.
+result = deepscale.downscale(gcm, obs, method="bcsd")
+
+# Turn a predictor into below/normal/above tercile probabilities.
+probs = deepscale.calibrate(predictor, obs, method="ereg")
+
+# Try several methods and keep the most skillful.
+best = deepscale.optimize(gcm, obs, methods=["bcsd", "cca"])
+
+# Combine multiple models into one forecast.
+mme = deepscale.ensemble([model_a, model_b], obs, strategy="uniform")
+
+# Score a forecast against observations.
 report = deepscale.skill(forecast, obs, metrics=["rpss", "roc"])
 ```
 
-### Minimal contract
+Inputs are xarray arrays with CF-style coordinates. A GCM hindcast has dimensions `(year, member, lat, lon)` and observations have `(year, lat, lon)`. Outputs are continuous or tercile forecast products plus skill summaries and maps. Terciles are ordered `[0, 1, 2]` for below-normal, normal, and above-normal.
 
-- **Input:** xarray arrays with CF-style coordinates.
-- **Output:** continuous or tercile forecast products plus skill summaries/maps.
-- **Core dims:** GCM hindcast `(year, member, lat, lon)`, obs `(year, lat, lon)`.
+## What is included
 
-## Current scope (v0)
+Everything below is selected by name.
 
-- downscaling methods: BCSD, CCA
-- calibration methods: ensemble regression (`ereg`), logistic index calibration (`logit`)
-- metrics: RPSS, ROC area, Pearson correlation
-- cross-validation: LOYO
-- ensemble strategy: uniform weights
-- outputs: continuous and tercile forecasts
+Downscaling and bias-correction methods, passed as `method=` to `downscale()` and `optimize()`:
 
-v0 proves the framework. Most growth should come from adding methods/metrics, not rewriting orchestration logic. The full roadmap — including PyCPT parity, ML methods, and spec-compliance work — is tracked on [GitHub Issues](https://github.com/accord-research/deepscale/issues?q=is%3Aopen+label%3Av1-roadmap) under the `v1-roadmap` label.
+| Method | Description |
+|---|---|
+| `bcsd` | Bias correction with spatial disaggregation |
+| `cca` | Canonical correlation analysis |
+| `qm` | Quantile mapping |
+| `dqm` | Detrended quantile mapping |
+| `delta` | Delta-change |
+| `climatology` | Climatological baseline |
+| `rank-analog` | Rank-based quantile matching |
+| `corrdiff` | NVIDIA CorrDiff diffusion downscaling; needs GPU dependencies that are not on PyPI (see `src/deepscale/methods/corrdiff.py`) |
+
+Calibration methods, passed as `method=` to `calibrate()`:
+
+| Method | Description |
+|---|---|
+| `ereg` | Ensemble regression |
+| `logit` | Logistic index calibration |
+
+Ensemble strategies, passed as `strategy=` to `ensemble()`: `uniform`, `skill_weighted`, `bma`, `drop_worst`.
+
+Skill metrics, passed as `metrics=` to `skill()`: `rpss`, `roc`, `roc_area_below_normal`, `roc_area_above_normal`, `generalized_roc`, `pearson_r`, `spearman`, `2afc`, `root_mean_squared_error`, `heidke_skill_score`, `reliability`, `spread_error_ratio`, `spread_error_correlation`.
+
+Cross-validation schemes: `loyo` (leave-one-year-out), `lko` (leave-k-out), `blocked`, `expanding`.
 
 ## Example workflow
 
-Run the end-to-end demo:
+The repository ships a runnable end-to-end demo:
 
 ```bash
-python deepscale/examples/demo_forecast.py
+python examples/demo_forecast.py
 ```
 
-How this uses Rosetta:
+It uses Rosetta to fetch ERA5 temperature observations (`obs/era5`) and ECMWF seasonal hindcasts (`c3s/ecmwf-monthly`), reshapes them into DeepScale inputs, then runs optimize, tercile conversion, and skill scoring. Rosetta handles the remote retrieval and normalization; DeepScale starts from the prepared xarray datasets.
 
-- The demo imports Rosetta and calls `rosetta.fetch(...)` twice in `deepscale/examples/demo_forecast.py`.
-- First call fetches ERA5 temperature observations (`product="obs/era5"`) for the training period and region.
-- Second call fetches ECMWF seasonal hindcasts (`product="c3s/ecmwf-monthly"`) for the same target setup.
-- Those Rosetta outputs are normalized xarray datasets; the demo reshapes them into DeepScale input dims and then runs optimize -> tercile -> skill.
+The demo needs CDS credentials in `~/.cdsapirc` with the relevant dataset licences accepted (see the Rosetta README for setup). `examples/README.md` lists all demos and their prerequisites.
 
-In short: Rosetta handles remote retrieval + normalization, and DeepScale starts from those prepared xarray datasets.
+## Calibration
 
-The demo also requires CDS credentials configured in `~/.cdsapirc` with accepted dataset licenses — see the Rosetta README for setup.
-
-See `deepscale/examples/README.md` for full prerequisites and output details.
-
-## Calibration API
-
-Use `deepscale.calibrate()` when the predictor is already on the target grid, or
-when a scalar predictor index is being converted directly into tercile
-probabilities. Calibration methods return `(tercile, lat, lon)` probabilities,
-where `tercile=[0, 1, 2]` means below-normal, normal, and above-normal.
+`deepscale.calibrate()` produces tercile probabilities with dims `(tercile, lat, lon)` directly. Use it when the predictor is already on the target grid, or when a scalar index drives the forecast.
 
 ### Ensemble regression (`method="ereg"`)
 
-`ereg` fits each model independently with per-grid-cell ordinary least squares:
-the ensemble-mean hindcast predicts the observed field, then the selected
-forecast year is converted to parametric tercile probabilities. Multi-model
-inputs are averaged after each model produces its own probability map.
+eReg fits each model independently with per-grid-cell ordinary least squares: the ensemble-mean hindcast predicts the observed field, and the chosen forecast year is converted to parametric tercile probabilities. Multiple models are averaged after each produces its own probability map.
 
 ```python
 probs = deepscale.calibrate(
@@ -112,38 +111,23 @@ probs = deepscale.calibrate(
 )
 ```
 
-Each hindcast should have `year`, optional `member`, and spatial dimensions
-named `lat/lon`, `latitude/longitude`, `Y/X`, or `y/x`. eReg is a calibration
-method, not a regridding method, so put model fields on the obs grid before
-calling it.
-
-If every provided forecast contains exactly one `year`, `forecast_year` can be
-omitted and is inferred. If no forecast is provided, eReg falls back to the
-requested year from the hindcast; with no requested year, it uses the maximum
-obs year.
+Each hindcast needs a `year` dimension, an optional `member` dimension, and spatial dimensions named `lat/lon`, `latitude/longitude`, `Y/X`, or `y/x`. eReg calibrates, it does not regrid, so put model fields on the observation grid first. If every forecast contains exactly one year, `forecast_year` is inferred.
 
 ### Logistic index calibration (`method="logit"`)
 
-`logit` fits a gridded logistic relationship between a scalar predictor index
-and observed tercile occurrence. Pass the hindcast index series as `predictor`
-and the forecast-year index value as `forecast`.
+logit fits a gridded logistic relationship between a scalar predictor index and observed tercile occurrence. Pass the hindcast index series as `predictor` and the forecast-year value as `forecast`.
 
 ```python
 index = deepscale.Index.named("wvg")
-
 hindcast_index = index.reduce(sst_hindcast)
 forecast_index = index.reduce(sst_forecast, climatology=sst_hindcast)
 
 probs = deepscale.calibrate(
-    hindcast_index,
-    obs,
-    method="logit",
-    forecast=forecast_index,
+    hindcast_index, obs, method="logit", forecast=forecast_index,
 )
 ```
 
-For gridded SST predictors, `LogitConfig` reduces hindcast and forecast fields
-through an `Index` before calling the same logit engine:
+For gridded SST predictors, `LogitConfig` reduces the fields through an `Index` before calibration:
 
 ```python
 probs = deepscale.calibrate(
@@ -158,42 +142,27 @@ probs = deepscale.calibrate(
 )
 ```
 
-`logit` aligns index and observation years by the `year` coordinate and requires
-the forecast index to contain exactly one value. A `significance` mask uses the
-`statsmodels` backend automatically; otherwise the default backend is
-`sklearn`.
-
-Runnable examples:
-
-- [`examples/demo_ensemble_regression.py`](examples/demo_ensemble_regression.py)
-  for eReg.
-- [`examples/demo_logistic_wvg.py`](examples/demo_logistic_wvg.py) for WVG/logit.
+Runnable examples: `examples/demo_ensemble_regression.py` (eReg) and `examples/demo_logistic_wvg.py` (logit).
 
 ## Relationship to Rosetta
 
-Rosetta handles acquisition and normalization. DeepScale handles forecasting logic and verification. The boundary is standardized xarray data, so DeepScale remains source-agnostic.
+Rosetta handles data acquisition and normalization; DeepScale handles forecasting and verification. The interface between them is standardized xarray, so DeepScale stays source-agnostic and works with any data prepared the same way.
 
-## Seasonal pipeline (currently unscheduled)
-
-DeepScale shipped a nightly GitHub Actions workflow that ran the seasonal forecast pipeline for Kenya, Ethiopia, and Nigeria and published results to a static dashboard at [https://accord-research.github.io/deepscale/](https://accord-research.github.io/deepscale/). **That workflow has been retired** — SEAS5 only republishes monthly and CHIRPS observations lag by ~2 months, so daily runs produced ~95% redundant output for the cost of CI time and dashboard churn.
-
-The seasonal pipeline code remains intact for on-demand local execution:
+## Development setup
 
 ```bash
-uv run python -m scripts.nightly.run_country \
-  --country ethiopia \
-  --today 2026-05-19 \
-  --output-root output/
+git clone https://github.com/accord-research/deepscale.git
+cd deepscale
+uv sync
 ```
 
-- Per-country parameters: [`scripts/nightly/nightly.yml`](scripts/nightly/nightly.yml).
-- Original design + plan: [`docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md`](docs/superpowers/specs/2026-05-16-nightly-forecast-workflow-design.md), [`docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md`](docs/superpowers/plans/2026-05-16-nightly-forecast-workflow.md).
-- The `gh-pages` branch is preserved as a frozen snapshot of the last published seasonal output.
+Some examples also use Rosetta for data acquisition:
 
-The replacement, a sub-seasonal downscaling testbed with daily cadence justified by faster-arriving ground truth, is designed in [`docs/superpowers/specs/2026-05-19-s2s-downscaling-testbed-design.md`](docs/superpowers/specs/2026-05-19-s2s-downscaling-testbed-design.md) and will land in subsequent plans.
+```bash
+cd ..
+git clone https://github.com/accord-research/rosetta.git
+cd rosetta
+uv sync
+```
 
-## Repository hygiene
-
-`deepscale/.gitignore` excludes local-only artifacts including virtualenvs, caches, and generated example outputs (`deepscale/examples/output/`, `*.png`, `*.nc`, `*.zarr/`).
-
-Do not commit machine-local caches, generated artifacts, or credential files.
+The roadmap (PyCPT parity, additional methods, and machine-learning tiers) is tracked on [GitHub Issues](https://github.com/accord-research/deepscale/issues?q=is%3Aopen+label%3Av1-roadmap) under the `v1-roadmap` label.
