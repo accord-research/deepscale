@@ -11,7 +11,7 @@ import numpy as np
 from .._optional import require_optional
 
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 
 def _reconstruct_spatial(loadings, valid_mask, shape):

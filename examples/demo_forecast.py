@@ -138,36 +138,41 @@ def main() -> None:
     print("\n[5] LOYO cross-validated skill (this may take a minute)...")
     cv_forecasts_terc = []
     cv_forecasts_det = []
-    for train_years, _test_year in loyo(HINDCAST_YEARS):
-        fitted = ds.optimize(
+    for train_years, test_year in loyo(HINDCAST_YEARS):
+        # Fit the chosen method on the training years, then predict the held-out
+        # year. Do NOT call optimize() here: it runs its own LOYO internally, so
+        # nesting it in this loop both double-cross-validates and hands the inner
+        # loyo a non-consecutive year set (the held-out year leaves a gap).
+        model = ds.train(
+            best.method,
             gcm.sel(year=train_years),
             obs.sel(year=train_years),
-            methods=[best.method],
             verbose=VERBOSE,
-            progress=PROGRESS,
         )
-        cv_forecasts_terc.append(to_tercile(fitted.forecast, obs.sel(year=train_years)))
-        cv_forecasts_det.append(fitted.forecast)
+        pred = model.predict(gcm.sel(year=test_year))
+        obs_train = obs.sel(year=train_years)
+        cv_forecasts_terc.append(to_tercile(pred, obs_train).expand_dims(year=[test_year]))
+        cv_forecasts_det.append(pred.expand_dims(year=[test_year]))
 
-    cv_fcst = xr.concat(cv_forecasts_terc, dim="year")
-    cv_fcst["year"] = HINDCAST_YEARS
-    cv_fcst_det = xr.concat(cv_forecasts_det, dim="year")
-    cv_fcst_det["year"] = HINDCAST_YEARS
+    cv_fcst = xr.concat(cv_forecasts_terc, dim="year").sortby("year")
+    cv_fcst_det = xr.concat(cv_forecasts_det, dim="year").sortby("year")
 
     # Probabilistic metrics need the tercile forecast; RMSE needs the raw deterministic
     # ensemble (same units as obs). Two skill calls keep each metric on the right input.
+    # Tercile-probability metrics take the tercile forecast; continuous metrics
+    # (correlations, RMSE, spread-error) take the deterministic ensemble. Each
+    # metric only accepts one forecast type, so keep them in the right call.
     report = ds.skill(
         cv_fcst, obs,
-        metrics=[
-            "rpss", "pearson_r", "spearman", "hss",
-            "2afc", "roc",
-            "generalized_roc", "reliability",
-        ],
+        metrics=["rpss", "hss", "roc", "generalized_roc", "reliability"],
         spatial=True,
     )
     report_det = ds.skill(
         cv_fcst_det, obs,
-        metrics=["rmse", "spread_error_ratio", "spread_error_correlation"],
+        metrics=[
+            "pearson_r", "spearman", "2afc",
+            "rmse", "spread_error_ratio", "spread_error_correlation",
+        ],
         spatial=True,
     )
 
@@ -293,7 +298,7 @@ def main() -> None:
             "2afc", "roc_bn", "roc_nn", "roc_an",
         )
         metrics_to_plot = {
-            k: v for k, v in report.scores.items()
+            k: v for k, v in combined_report.scores.items()
             if isinstance(v, (int, float)) and k not in signed_excludes
         }
         names = list(metrics_to_plot.keys())
@@ -312,7 +317,7 @@ def main() -> None:
         # Second bar chart: [0, 1] discrimination skills with 0.5 = no skill.
         ax_bar2 = fig.add_subplot(gs[0, 3])
         disc_metrics = {
-            k: v for k, v in report.scores.items()
+            k: v for k, v in combined_report.scores.items()
             if k in ("2afc", "roc_bn", "roc_nn", "roc_an")
         }
         if disc_metrics:

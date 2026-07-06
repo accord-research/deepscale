@@ -3,7 +3,7 @@
 from .._optional import require_optional
 
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 # Per-metric (cmap, vmin, vmax). vmin/vmax of None means auto-scale.
 # Fixed ranges enforce cross-panel comparability (issue §3.3 pitfall).

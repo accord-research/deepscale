@@ -18,7 +18,7 @@ _MANDATORY = ("rpss", "roc_bn", "roc_nn", "roc_an", "reliability")
 
 def render(report, path):
     """Render a SkillReport to `path` as a WMO-SVSLRF-formatted PDF."""
-    require_optional("matplotlib", "pip install deepscale[plotting]")
+    require_optional("matplotlib", "pip install accord-deepscale[plotting]")
     from matplotlib.backends.backend_pdf import PdfPages
 
     from . import _pages
