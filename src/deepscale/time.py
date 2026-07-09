@@ -39,6 +39,7 @@ __all__ = [
     "infer_cadence",
     "season_step",
     "season_bounds",
+    "season_times",
 ]
 
 # ---------------------------------------------------------------------------
@@ -282,3 +283,35 @@ def season_step(
     inside = (idx >= start) & (idx <= end)
     steps = np.where(inside, steps, -1)
     return xr.DataArray(steps, dims=time.dims, coords=time.coords, name="season_step")
+
+
+def season_times(season, year: int, cadence: str) -> pd.DatetimeIndex:
+    """The start stamp of every step in ``season``, in order.
+
+    The inverse of :func:`season_step`: given a season and a cadence, enumerate
+    the steps rather than classify stamps into them. Completion uses this to
+    build the full step axis of a season before any data has been placed on it,
+    so a season that is only half observed still knows how long it is.
+
+    A season whose start falls mid-step begins at the step *containing* the
+    start, matching :func:`season_step`'s ordinal convention.
+    """
+    start, end = season_bounds(season, year)
+
+    if cadence == "daily":
+        return pd.date_range(start, end, freq="D")
+    if cadence == "monthly":
+        return pd.date_range(start.replace(day=1), end, freq="MS")
+    if cadence == "dekad":
+        first, advance = dekad_start_for(start.date()), _next_dekad_start
+    elif cadence == "pentad":
+        first = pentad_start_for(start.date())
+        advance = lambda d: pentad_window(d)[1]  # noqa: E731
+    else:
+        raise ValueError(f"unknown cadence {cadence!r}")
+
+    stamps, cur = [], first
+    while cur <= end.date():
+        stamps.append(cur)
+        cur = advance(cur)
+    return pd.DatetimeIndex(stamps)

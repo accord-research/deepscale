@@ -19,12 +19,87 @@ accumulation window is *for*.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 from scipy.stats import norm
 
-__all__ = ["accumulate", "percentile_of", "rank_of_record"]
+from .time import infer_cadence, season_step, season_times
+
+__all__ = ["accumulate", "percentile_of", "rank_of_record", "seasonal_stack"]
 
 _HOW = {"sum", "mean", "max", "min"}
+
+
+def seasonal_stack(
+    da: xr.DataArray,
+    season,
+    *,
+    time_dim: str = "time",
+    cadence: str | None = None,
+    years=None,
+) -> xr.DataArray:
+    """Reshape a continuous time series into one season per year.
+
+    Turns ``(time, ...)`` spanning decades into ``(year, step, ...)``, where
+    ``step`` is the ordinal position within the season. That layout is what
+    makes years comparable: step 3 of the 1997 season and step 3 of the 2026
+    season are the same point in the season, which their calendar timestamps
+    never are.
+
+    Parameters
+    ----------
+    da : xr.DataArray
+        A time series with a datetime ``time_dim``. Any other dims survive.
+    season : see :func:`deepscale.time.season_bounds`
+        The window to extract, e.g. ``"JJAS"``.
+    years : sequence of int, optional
+        Season start years to extract. Defaults to every year the record could
+        cover. Years with no data in the season are dropped; years with partial
+        data are kept, padded with NaN.
+
+    Returns
+    -------
+    xr.DataArray
+        ``(year, step, ...)``, with a ``step`` dim long enough for the longest
+        season in ``years`` (they can differ by a day across leap years) and a
+        ``season_start`` coordinate on ``year``.
+    """
+    if time_dim not in da.dims:
+        raise ValueError(f"{time_dim!r} not found on data with dims {tuple(da.dims)}")
+    cadence = cadence or infer_cadence(da[time_dim])
+
+    stamps = pd.DatetimeIndex(np.asarray(da[time_dim].values))
+    if years is None:
+        # A wraparound season starting in year Y can reach into Y+1, so the
+        # earliest possible season year is one before the record's first stamp.
+        years = range(int(stamps.year.min()) - 1, int(stamps.year.max()) + 1)
+    years = [int(y) for y in years]
+
+    width = max(len(season_times(season, y, cadence)) for y in years)
+
+    slices, kept = [], []
+    for year in years:
+        steps = season_step(da[time_dim], season, year=year, cadence=cadence)
+        inside = steps.values >= 0
+        if not inside.any():
+            continue
+        sub = da.isel({time_dim: inside})
+        sub = (
+            sub.assign_coords(step=(time_dim, steps.values[inside]))
+            .swap_dims({time_dim: "step"})
+            .drop_vars(time_dim)
+            .reindex(step=np.arange(width))
+        )
+        slices.append(sub)
+        kept.append(year)
+
+    if not slices:
+        raise ValueError(f"no data falls inside season {season!r} for years {years}")
+
+    stacked = xr.concat(slices, dim=pd.Index(kept, name="year"))
+    return stacked.assign_coords(
+        season_start=("year", [season_times(season, y, cadence)[0] for y in kept])
+    )
 
 
 def accumulate(
