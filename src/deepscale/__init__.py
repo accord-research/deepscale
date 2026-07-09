@@ -9,6 +9,7 @@ from .pipelines import seasonal_mme, SeasonalMMEResult
 from .indices import Index
 from .calibrate import calibrate, LogitConfig
 from .climate import accumulate, percentile_of, rank_of_record
+from .series import quantile_map, error_bounds, ErrorBounds
 from .io import write_terciles, tercile_mae
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
 from . import methods     # trigger registration
@@ -38,6 +39,9 @@ __all__ = [
     "accumulate",
     "percentile_of",
     "rank_of_record",
+    "quantile_map",
+    "error_bounds",
+    "ErrorBounds",
     "write_terciles",
     "tercile_mae",
     "plot_terciles",
