@@ -16,6 +16,7 @@ from .completion import complete, CompletionResult
 from .series import quantile_map, error_bounds, ErrorBounds
 from .io import write_terciles, tercile_mae
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
+from .plotting.scenarios import plot_accumulation_scenarios, plot_index_scatter
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -57,4 +58,6 @@ __all__ = [
     "write_terciles",
     "tercile_mae",
     "plot_terciles",
+    "plot_accumulation_scenarios",
+    "plot_index_scatter",
 ]

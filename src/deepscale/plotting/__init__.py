@@ -18,6 +18,7 @@ from .forecasts import (
     plot_flex_pdf,
 )
 from .reliability import plot_reliability_diagram
+from .scenarios import plot_accumulation_scenarios, plot_index_scatter
 from .modes import plot_eof_modes, plot_cca_modes
 
 __all__ = [
@@ -28,6 +29,8 @@ __all__ = [
     "plot_exceedance_probability",
     "plot_flex_pdf",
     "plot_reliability_diagram",
+    "plot_accumulation_scenarios",
+    "plot_index_scatter",
     "plot_eof_modes",
     "plot_cca_modes",
 ]
