@@ -211,3 +211,35 @@ def test_season_step_infers_year_from_the_first_stamp():
     explicit = season_step(_time(starts), "JJAS", year=2015)
     inferred = season_step(_time(starts), "JJAS")
     np.testing.assert_array_equal(explicit.values, inferred.values)
+
+
+# --- season months ---------------------------------------------------------
+
+
+def test_season_months_from_a_code():
+    from deepscale.time import season_months
+    assert season_months("JJAS") == [6, 7, 8, 9]
+    assert season_months("MAM") == [3, 4, 5]
+
+
+def test_season_months_wraps_the_year_boundary():
+    from deepscale.time import season_months
+    assert season_months("NDJ") == [11, 12, 1]
+    assert season_months("OND") == [10, 11, 12]
+
+
+def test_season_months_from_a_month_pair_matches_the_code_form():
+    from deepscale.time import season_months
+    assert season_months((6, 9)) == season_months("JJAS")
+    assert season_months((11, 1)) == season_months("NDJ")
+
+
+def test_season_months_of_a_single_month():
+    from deepscale.time import season_months
+    assert season_months((7, 7)) == [7]
+
+
+def test_season_months_rejects_a_timestamp_pair():
+    from deepscale.time import season_months
+    with pytest.raises(TypeError, match="month-initial code"):
+        season_months(("2026-06-01", "2026-09-30"))

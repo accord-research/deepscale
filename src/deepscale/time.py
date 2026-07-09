@@ -39,6 +39,7 @@ __all__ = [
     "infer_cadence",
     "season_step",
     "season_bounds",
+    "season_months",
     "season_times",
 ]
 
@@ -207,6 +208,26 @@ def season_bounds(season, year: int) -> tuple[pd.Timestamp, pd.Timestamp]:
 
 
 _MONTH_INITIALS = "JFMAMJJASOND"
+
+
+def season_months(season) -> list[int]:
+    """The calendar months a season spans, in order. ``"JJAS"`` -> ``[6, 7, 8, 9]``.
+
+    Useful for pruning a fetch to the months an analysis actually needs, rather
+    than downloading a whole year and discarding three quarters of it.
+    ``season`` may be a month-initial code or an ``(start_month, end_month)``
+    pair; a wraparound season wraps (``"NDJ"`` -> ``[11, 12, 1]``).
+    """
+    if isinstance(season, str):
+        return _months_from_code(season)
+    start, end = season
+    if not (isinstance(start, (int, np.integer)) and isinstance(end, (int, np.integer))):
+        raise TypeError(
+            "season_months needs a month-initial code or an (start_month, "
+            f"end_month) pair of ints, got {season!r}"
+        )
+    span = (int(end) - int(start)) % 12
+    return [((int(start) - 1 + k) % 12) + 1 for k in range(span + 1)]
 
 
 def _months_from_code(code: str) -> list[int]:
