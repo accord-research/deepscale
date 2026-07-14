@@ -188,6 +188,9 @@ def plot_index_scatter(
     colors=None,
     highlight=None,
     forecast=None,
+    forecast_marker="*",
+    forecast_color="#f2c14e",
+    forecast_label="Forecast",
     error_bars=None,
     labels: bool = False,
     xlabel: str | None = None,
@@ -265,8 +268,9 @@ def plot_index_scatter(
                 xerr=_half_widths(fx, x_bounds), yerr=_half_widths(fy, y_bounds),
                 fmt="none", ecolor="#1a1a1a", elinewidth=1.2, capsize=4, zorder=5,
             )
-        ax.scatter([fx], [fy], marker="*", s=340, c="#f2c14e",
-                   edgecolor="#1a1a1a", linewidth=1.0, zorder=6, label="Forecast")
+        s = 340 if forecast_marker == "*" else 150
+        ax.scatter([fx], [fy], marker=forecast_marker, s=s, c=forecast_color,
+                   edgecolor="#1a1a1a", linewidth=1.0, zorder=6, label=forecast_label)
 
     ax.axhline(0, color="#999999", linewidth=0.7, zorder=1)
     ax.axvline(0, color="#999999", linewidth=0.7, zorder=1)

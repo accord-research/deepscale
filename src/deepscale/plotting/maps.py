@@ -39,6 +39,34 @@ def _pyplot():
     return importlib.import_module("matplotlib.pyplot")
 
 
+def _classified(classes):
+    """Build a discrete colour scheme from ``(bounds, colors[, labels])``.
+
+    ``bounds`` has one more entry than ``colors``: N colours fill the N
+    intervals between N+1 boundaries. An optional ``labels`` (length N) names the
+    classes on the colour bar; without it the intervals are labelled by their
+    edges. Returns everything a classified `pcolormesh`/choropleth needs.
+    """
+    from matplotlib.colors import BoundaryNorm, ListedColormap
+
+    if len(classes) == 3:
+        bounds, colors, labels = classes
+    else:
+        bounds, colors = classes
+        labels = None
+    if len(bounds) != len(colors) + 1:
+        raise ValueError(
+            f"classes needs len(bounds) == len(colors) + 1; got "
+            f"{len(bounds)} bounds and {len(colors)} colors."
+        )
+    cmap = ListedColormap(list(colors))
+    norm = BoundaryNorm(list(bounds), cmap.N)
+    centers = [(bounds[i] + bounds[i + 1]) / 2 for i in range(len(colors))]
+    if labels is None:
+        labels = [f"{bounds[i]:g}–{bounds[i + 1]:g}" for i in range(len(colors))]
+    return cmap, norm, list(bounds), centers, list(labels)
+
+
 def _try_cartopy():
     try:
         import cartopy.crs as ccrs  # noqa: F401
@@ -82,6 +110,7 @@ def plot_field_map(
     cmap=None,
     vmin=None,
     vmax=None,
+    classes=None,
     highlight=None,
     highlight_label="driest on record",
     boundaries=None,
@@ -96,6 +125,12 @@ def plot_field_map(
     da : xr.DataArray
         Must have lat/lon dims (any of the usual aliases). Any extra dims must
         already be reduced to a single 2-D slice.
+    classes : tuple, optional
+        A discrete classification ``(bounds, colors[, labels])`` — ``bounds`` is
+        N+1 breakpoints, ``colors`` the N fill colours, ``labels`` their optional
+        class names. Draws a stepped colour bar instead of a continuous ramp,
+        matching how operational rank / percentile maps are shown. Overrides
+        ``cmap``/``vmin``/``vmax``.
     highlight : float, optional
         Overpaint cells equal to this value in a single saturated colour — the
         "driest on record" convention (pass ``highlight=1`` over a
@@ -104,7 +139,8 @@ def plot_field_map(
         Admin outlines to overlay (drawn as unfilled edges).
     cmap, vmin, vmax : optional
         Default to a sequential map on ``[0, 1]`` when the data looks like a
-        percentile field, else matplotlib's autoscaling.
+        percentile field, else matplotlib's autoscaling. Ignored if ``classes``
+        is given.
 
     Returns
     -------
@@ -123,16 +159,24 @@ def plot_field_map(
     da = da.sortby([lat, lon])
     values = da.transpose(lat, lon).values
 
-    looks_like_fraction = np.nanmin(values) >= 0.0 and np.nanmax(values) <= 1.0
-    if cmap is None:
-        cmap = _PERCENTILE_CMAP if looks_like_fraction else "viridis"
-    if vmin is None and looks_like_fraction:
-        vmin, vmax = 0.0, 1.0
-
-    mesh = ax.pcolormesh(da[lon].values, da[lat].values, values,
-                         cmap=cmap, vmin=vmin, vmax=vmax, **_transform(ccrs))
-    fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04,
-                 label=cbar_label or (da.name or "value"))
+    if classes is not None:
+        cmap_obj, norm, bounds, centers, labels = _classified(classes)
+        mesh = ax.pcolormesh(da[lon].values, da[lat].values, values,
+                             cmap=cmap_obj, norm=norm, **_transform(ccrs))
+        cb = fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04,
+                          boundaries=bounds, ticks=centers,
+                          label=cbar_label or (da.name or "value"))
+        cb.ax.set_yticklabels(labels)
+    else:
+        looks_like_fraction = np.nanmin(values) >= 0.0 and np.nanmax(values) <= 1.0
+        if cmap is None:
+            cmap = _PERCENTILE_CMAP if looks_like_fraction else "viridis"
+        if vmin is None and looks_like_fraction:
+            vmin, vmax = 0.0, 1.0
+        mesh = ax.pcolormesh(da[lon].values, da[lat].values, values,
+                             cmap=cmap, vmin=vmin, vmax=vmax, **_transform(ccrs))
+        fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04,
+                     label=cbar_label or (da.name or "value"))
 
     if highlight is not None:
         mask = np.isclose(values, float(highlight))
@@ -166,6 +210,7 @@ def plot_choropleth(
     cmap=None,
     vmin=None,
     vmax=None,
+    classes=None,
     missing_color="#e8e8e8",
     edgecolor="#ffffff",
     linewidth=0.2,
@@ -185,6 +230,10 @@ def plot_choropleth(
     by : str, optional
         Column of ``geometries`` holding the region key that matches
         ``values``'s ``region`` coordinate. Defaults to the GeoDataFrame index.
+    classes : tuple, optional
+        Discrete classification ``(bounds, colors[, labels])`` — as in
+        :func:`plot_field_map`. Draws a stepped legend; overrides
+        ``cmap``/``vmin``/``vmax``.
     missing_color : colour
         Fill for regions with no value (NaN) — a district the grid never
         covered. Drawn, not dropped, so the map has no holes.
@@ -219,22 +268,28 @@ def plot_choropleth(
     else:
         fig = ax.figure
 
-    finite = frame["_value"].to_numpy(dtype=float)
-    finite = finite[np.isfinite(finite)]
-    looks_like_fraction = finite.size and finite.min() >= 0.0 and finite.max() <= 1.0
-    if cmap is None:
-        cmap = _PERCENTILE_CMAP if looks_like_fraction else "viridis"
-    if vmin is None and looks_like_fraction:
-        vmin, vmax = 0.0, 1.0
-
-    frame.plot(
-        column="_value", ax=ax, cmap=cmap, vmin=vmin, vmax=vmax,
-        edgecolor=edgecolor, linewidth=linewidth, legend=True,
-        legend_kwds={"label": cbar_label or (values.name or "value"),
-                     "fraction": 0.046, "pad": 0.04},
-        missing_kwds={"color": missing_color, "edgecolor": edgecolor,
-                      "linewidth": linewidth, "label": "no data"},
-    )
+    plot_kw = dict(column="_value", ax=ax, edgecolor=edgecolor, linewidth=linewidth,
+                   legend=True,
+                   legend_kwds={"label": cbar_label or (values.name or "value"),
+                                "fraction": 0.046, "pad": 0.04},
+                   missing_kwds={"color": missing_color, "edgecolor": edgecolor,
+                                 "linewidth": linewidth, "label": "no data"})
+    if classes is not None:
+        cmap_obj, norm, bounds, centers, labels = _classified(classes)
+        plot_kw["legend_kwds"].update(boundaries=bounds, ticks=centers)
+        frame.plot(cmap=cmap_obj, norm=norm, **plot_kw)
+        # geopandas returns no handle to the colorbar; relabel via the last axis.
+        cb_ax = fig.axes[-1]
+        cb_ax.set_yticklabels(labels)
+    else:
+        finite = frame["_value"].to_numpy(dtype=float)
+        finite = finite[np.isfinite(finite)]
+        looks_like_fraction = finite.size and finite.min() >= 0.0 and finite.max() <= 1.0
+        if cmap is None:
+            cmap = _PERCENTILE_CMAP if looks_like_fraction else "viridis"
+        if vmin is None and looks_like_fraction:
+            vmin, vmax = 0.0, 1.0
+        frame.plot(cmap=cmap, vmin=vmin, vmax=vmax, **plot_kw)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel("lon")
     ax.set_ylabel("lat")

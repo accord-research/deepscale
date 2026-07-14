@@ -133,3 +133,38 @@ def test_choropleth_reprojects_to_epsg_4326(regions):
     fig = plot_choropleth(_values({"A": 0.1, "B": 0.5, "C": 0.9}), projected, by="code")
     # x-limits should be in degrees (~0-3), not Web Mercator metres
     assert fig.axes[0].get_xlim()[1] < 100
+
+
+# --- discrete classification (classes=) ------------------------------------
+
+
+def test_field_map_classes_draws_a_stepped_colorbar(field):
+    classes = ([0, 0.2, 0.5, 1.0], ["#8b0000", "#dddddd", "#00008b"], ["dry", "mid", "wet"])
+    fig = plot_field_map(field, classes=classes)
+    # colorbar tick labels are the class names
+    cb_ax = fig.axes[-1]
+    assert [t.get_text() for t in cb_ax.get_yticklabels()] == ["dry", "mid", "wet"]
+
+
+def test_field_map_classes_bins_values_by_bounds():
+    from matplotlib.colors import BoundaryNorm
+    da = xr.DataArray([[0.1, 0.35, 0.8]], dims=("lat", "lon"),
+                      coords={"lat": [0.0], "lon": [0.0, 1.0, 2.0]})
+    fig = plot_field_map(da, classes=([0, 0.2, 0.5, 1.0],
+                                      ["#8b0000", "#dddddd", "#00008b"]))
+    mesh = fig.axes[0].collections[0]
+    assert isinstance(mesh.norm, BoundaryNorm)
+
+
+def test_classes_rejects_mismatched_bounds_and_colors(field):
+    with pytest.raises(ValueError, match="len\\(bounds\\) == len\\(colors\\) \\+ 1"):
+        plot_field_map(field, classes=([0, 1], ["#000", "#fff", "#f00"]))
+
+
+def test_choropleth_classes_draws_a_stepped_legend(regions):
+    vals = _values({"A": 0.02, "B": 0.4, "C": 0.95})
+    fig = plot_choropleth(vals, regions, by="code",
+                          classes=([0, 0.1, 0.5, 1.0], ["#7e0006", "#e0e0e0", "#3a86c8"],
+                                   ["low", "mid", "high"]))
+    assert any("low" in t.get_text() or "high" in t.get_text()
+               for a in fig.axes for t in a.get_yticklabels())
