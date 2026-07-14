@@ -168,3 +168,31 @@ def test_choropleth_classes_draws_a_stepped_legend(regions):
                                    ["low", "mid", "high"]))
     assert any("low" in t.get_text() or "high" in t.get_text()
                for a in fig.axes for t in a.get_yticklabels())
+
+
+# --- clip to geometry ------------------------------------------------------
+
+
+def test_clip_masks_cells_outside_the_geometry():
+    """A field over a 4x4 grid clipped to the left-half box must render only the
+    left columns (right half -> NaN)."""
+    lat = lon = np.array([0.5, 1.5, 2.5, 3.5])
+    da = xr.DataArray(np.ones((4, 4)), dims=("lat", "lon"),
+                      coords={"lat": lat, "lon": lon})
+    left = gpd.GeoDataFrame(geometry=[box(0, 0, 2, 4)], crs="EPSG:4326")
+    fig = plot_field_map(da, clip=left)
+    mesh = fig.axes[0].collections[0]
+    arr = np.ma.masked_invalid(np.asarray(mesh.get_array(), float))
+    # 8 cells inside (lon 0.5,1.5 over 4 rows), 8 masked outside
+    assert arr.count() == 8
+
+
+def test_clip_dissolves_multiple_features(regions):
+    """Passing all polygons clips to their union, not just the first."""
+    lat = lon = np.array([0.5, 1.5, 2.5])
+    da = xr.DataArray(np.ones((3, 3)), dims=("lat", "lon"),
+                      coords={"lat": lat, "lon": lon})
+    fig = plot_field_map(da, clip=regions)   # three unit boxes at x in 0-3, y 0-1
+    mesh = fig.axes[0].collections[0]
+    arr = np.ma.masked_invalid(np.asarray(mesh.get_array(), float))
+    assert arr.count() == 3   # only the y=0.5 row falls inside the boxes

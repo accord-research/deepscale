@@ -111,6 +111,7 @@ def plot_field_map(
     vmin=None,
     vmax=None,
     classes=None,
+    clip=None,
     highlight=None,
     highlight_label="driest on record",
     boundaries=None,
@@ -125,6 +126,10 @@ def plot_field_map(
     da : xr.DataArray
         Must have lat/lon dims (any of the usual aliases). Any extra dims must
         already be reduced to a single 2-D slice.
+    clip : shapefile path / GeoDataFrame / GeoSeries / geometry, optional
+        Mask cells outside this region to NaN, so the map shows the region's
+        true outline rather than the fetch bounding box. Multi-feature inputs
+        (e.g. all woredas) are dissolved to their union (the country).
     classes : tuple, optional
         A discrete classification ``(bounds, colors[, labels])`` — ``bounds`` is
         N+1 breakpoints, ``colors`` the N fill colours, ``labels`` their optional
@@ -157,6 +162,8 @@ def plot_field_map(
 
     plt, fig, ax, ccrs = _geo_axes(ax, figsize)
     da = da.sortby([lat, lon])
+    if clip is not None:
+        da = _mask_to_geometry(da, _resolve_geometry(clip), lat, lon)
     values = da.transpose(lat, lon).values
 
     if classes is not None:
@@ -321,3 +328,45 @@ def _require_geopandas():
             "Choropleths and boundary overlays need geopandas. "
             "Install the plotting + geo extras."
         ) from e
+
+
+def _resolve_geometry(clip):
+    """A single EPSG:4326 shapely geometry from a shapefile / gdf / geoseries / geom."""
+    gpd = _require_geopandas()
+    if isinstance(clip, str) or hasattr(clip, "__fspath__"):
+        gdf = gpd.read_file(clip)
+    elif isinstance(clip, gpd.GeoDataFrame):
+        gdf = clip
+    elif isinstance(clip, gpd.GeoSeries):
+        gdf = gpd.GeoDataFrame(geometry=clip)
+    else:
+        return clip  # assume a bare shapely geometry, already EPSG:4326
+    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
+        gdf = gdf.to_crs("EPSG:4326")
+    return gdf.union_all()   # dissolve to one boundary (e.g. woredas -> country)
+
+
+def _mask_to_geometry(da, geometry, lat, lon):
+    """Set cells whose centre falls outside ``geometry`` to NaN.
+
+    The map then shows the region's true shape instead of the fetch bounding
+    box, matching how operational products are drawn.
+    """
+    import xarray as xr
+    from rasterio.features import geometry_mask
+    from rasterio.transform import from_bounds
+
+    da = da.sortby([lat, lon]).transpose(lat, lon)
+    latv, lonv = da[lat].values, da[lon].values
+    if latv.size < 2 or lonv.size < 2:
+        return da
+    dlat, dlon = float(latv[1] - latv[0]), float(lonv[1] - lonv[0])
+    west, east = lonv[0] - dlon / 2, lonv[-1] + dlon / 2
+    south, north = latv[0] - dlat / 2, latv[-1] + dlat / 2
+    transform = from_bounds(west, south, east, north, len(lonv), len(latv))
+    # geometry_mask: True OUTSIDE the shapes. from_bounds is north-up (row 0 =
+    # north); our latitude is ascending (row 0 = south), so flip to align.
+    outside = np.flipud(geometry_mask([geometry], out_shape=(len(latv), len(lonv)),
+                                      transform=transform, invert=False))
+    inside = xr.DataArray(~outside, dims=(lat, lon), coords={lat: latv, lon: lonv})
+    return da.where(inside)
