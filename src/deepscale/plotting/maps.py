@@ -99,6 +99,60 @@ def _add_basemap(ax, ccrs):
     ax.add_feature(cfeature.BORDERS, linewidth=0.4, edgecolor="#666666")
 
 
+# Natural Earth admin-0 polygons, as cached on disk by cartopy. Reused (rather
+# than re-downloaded) so a plain-matplotlib install can still draw country
+# outlines on a multi-country map without pulling in cartopy.
+from pathlib import Path as _Path
+
+_NE_COUNTRIES = {
+    "10m": _Path.home() / ".local/share/cartopy/shapefiles/natural_earth/cultural/ne_10m_admin_0_countries.shp",
+    "50m": _Path.home() / ".local/share/cartopy/shapefiles/natural_earth/cultural/ne_50m_admin_0_countries.shp",
+}
+
+
+def natural_earth_borders(region=None, *, scale="50m"):
+    """Load Natural Earth admin-0 country polygons as a GeoDataFrame.
+
+    A convenience for drawing country outlines on a multi-country field map
+    (pass the result as ``plot_field_map(..., boundaries=...)``). It reuses the
+    Natural Earth shapefiles cartopy caches on disk, so it works on a
+    plain-matplotlib install with no cartopy import.
+
+    Parameters
+    ----------
+    region : sequence ``[lat_s, lat_n, lon_w, lon_e]``, optional
+        Keep only countries intersecting this box. ``None`` returns the world.
+    scale : {"50m", "10m"}
+        Natural Earth resolution. ``"50m"`` is the lighter default.
+
+    Returns
+    -------
+    GeoDataFrame with a single ``geometry`` column, in EPSG:4326.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the cached shapefile is absent — install cartopy once (or place the
+        Natural Earth ``ne_<scale>_admin_0_countries`` files at the cached path)
+        to populate it.
+    """
+    gpd = _require_geopandas()
+    path = _NE_COUNTRIES.get(scale)
+    if path is None:
+        raise ValueError(f"scale must be one of {sorted(_NE_COUNTRIES)}, got {scale!r}")
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Natural Earth admin-0 shapefile not found at {path}. Install cartopy "
+            "once to populate its shapefile cache, or drop the "
+            f"ne_{scale}_admin_0_countries.* files there."
+        )
+    gdf = gpd.read_file(path)[["geometry"]]
+    if region is not None:
+        lat_s, lat_n, lon_w, lon_e = region
+        gdf = gdf.cx[lon_w:lon_e, lat_s:lat_n]
+    return gdf.reset_index(drop=True)
+
+
 def _transform(ccrs):
     return {"transform": ccrs.PlateCarree()} if ccrs is not None else {}
 
@@ -166,11 +220,17 @@ def plot_field_map(
         da = _mask_to_geometry(da, _resolve_geometry(clip), lat, lon)
     values = da.transpose(lat, lon).values
 
+    # Match the colorbar height to the *drawn* map, which shrinks under equal
+    # aspect: without this the bar is sized to the pre-aspect axes and towers
+    # over a map that is wider than it is tall. 0.046 is the usual square-axes
+    # fraction; scaling by the data's height/width ratio tracks any extent.
+    cbar_fraction = 0.046 * (values.shape[0] / max(values.shape[1], 1))
+
     if classes is not None:
         cmap_obj, norm, bounds, centers, labels = _classified(classes)
         mesh = ax.pcolormesh(da[lon].values, da[lat].values, values,
                              cmap=cmap_obj, norm=norm, **_transform(ccrs))
-        cb = fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04,
+        cb = fig.colorbar(mesh, ax=ax, fraction=cbar_fraction, pad=0.04,
                           boundaries=bounds, ticks=centers,
                           label=cbar_label or (da.name or "value"))
         cb.ax.set_yticklabels(labels)
@@ -182,7 +242,7 @@ def plot_field_map(
             vmin, vmax = 0.0, 1.0
         mesh = ax.pcolormesh(da[lon].values, da[lat].values, values,
                              cmap=cmap, vmin=vmin, vmax=vmax, **_transform(ccrs))
-        fig.colorbar(mesh, ax=ax, fraction=0.046, pad=0.04,
+        fig.colorbar(mesh, ax=ax, fraction=cbar_fraction, pad=0.04,
                      label=cbar_label or (da.name or "value"))
 
     if highlight is not None:
@@ -275,10 +335,13 @@ def plot_choropleth(
     else:
         fig = ax.figure
 
+    # Size the colorbar to the drawn (equal-aspect) map -- see plot_field_map.
+    minx, miny, maxx, maxy = frame.total_bounds
+    cbar_fraction = 0.046 * ((maxy - miny) / max(maxx - minx, 1e-9))
     plot_kw = dict(column="_value", ax=ax, edgecolor=edgecolor, linewidth=linewidth,
                    legend=True,
                    legend_kwds={"label": cbar_label or (values.name or "value"),
-                                "fraction": 0.046, "pad": 0.04},
+                                "fraction": cbar_fraction, "pad": 0.04},
                    missing_kwds={"color": missing_color, "edgecolor": edgecolor,
                                  "linewidth": linewidth, "label": "no data"})
     if classes is not None:

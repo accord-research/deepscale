@@ -196,3 +196,17 @@ def test_clip_dissolves_multiple_features(regions):
     mesh = fig.axes[0].collections[0]
     arr = np.ma.masked_invalid(np.asarray(mesh.get_array(), float))
     assert arr.count() == 3   # only the y=0.5 row falls inside the boxes
+
+
+def test_natural_earth_borders_crops_to_region():
+    import deepscale as ds
+    import pytest
+    try:
+        world = ds.natural_earth_borders()
+    except FileNotFoundError:
+        pytest.skip("Natural Earth cache not present in this environment")
+    gha = ds.natural_earth_borders(region=[-13.5, 24.5, 20.5, 53.0])
+    assert "geometry" in gha.columns
+    assert len(gha) < len(world)           # the crop dropped countries outside the box
+    minx, miny, maxx, maxy = gha.total_bounds
+    assert minx < 53.0 and maxx > 20.5     # geometries lie within/near the GHA longitudes
