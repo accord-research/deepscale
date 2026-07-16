@@ -3,7 +3,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from deepscale.climate import accumulate, percentile_of, rank_of_record
+from deepscale.climate import (
+    accumulate,
+    frequency_below,
+    percentile_of,
+    rank_of_record,
+)
 
 
 @pytest.fixture
@@ -188,3 +193,71 @@ def test_rank_and_percentile_agree_on_ordering(record):
     fracs = percentile_of(values, record).isel(lat=0)
     order = np.argsort(ranks.values, kind="stable")
     assert np.all(np.diff(fracs.values[order]) >= 0)
+
+
+# --- frequency_below -------------------------------------------------------
+
+
+def test_frequency_below_counts_the_share_under_the_tercile(record):
+    """The 1/3 quantile of 0..9 is 3.0; a sample of {0,1,2,3,9} has three of its
+    five members strictly below 3.0."""
+    sample = xr.DataArray(
+        np.tile(np.array([0.0, 1.0, 2.0, 3.0, 9.0])[:, None], (1, 2)),
+        dims=("year", "lat"),
+        coords={"year": np.arange(5), "lat": [0.0, 1.0]},
+    )
+    freq = frequency_below(sample, record)
+    assert np.allclose(freq.values, 3 / 5)
+
+
+def test_frequency_below_honours_the_q_threshold(record):
+    """A higher q admits more of the sample below the threshold."""
+    sample = xr.DataArray(
+        np.arange(10.0)[:, None] * np.ones((1, 2)),
+        dims=("year", "lat"),
+        coords={"year": np.arange(10), "lat": [0.0, 1.0]},
+    )
+    low = frequency_below(sample, record, q=0.1)
+    high = frequency_below(sample, record, q=0.9)
+    assert np.all(high.values >= low.values)
+    assert np.all(high.values > 0.5)
+
+
+def test_frequency_below_preserves_surviving_dims(record):
+    """The result keeps every dim except the reduced one."""
+    sample = record  # (year, lat)
+    freq = frequency_below(sample, record)
+    assert freq.dims == ("lat",)
+
+
+def test_frequency_below_excludes_nan_sample_from_the_fraction(record):
+    """A NaN sample entry is dropped, not counted as below-threshold."""
+    sample = xr.DataArray(
+        np.array([0.0, np.nan, 9.0])[:, None] * np.ones((1, 2)),
+        dims=("year", "lat"),
+        coords={"year": np.arange(3), "lat": [0.0, 1.0]},
+    )
+    freq = frequency_below(sample, record)  # of the two valid, one (0.0) is below 3.0
+    assert np.allclose(freq.values, 0.5)
+
+
+def test_frequency_below_returns_nan_where_the_climatology_is_empty():
+    clim = xr.DataArray(
+        np.full((10, 2), np.nan), dims=("year", "lat"),
+        coords={"year": np.arange(10), "lat": [0.0, 1.0]},
+    )
+    sample = xr.DataArray(
+        np.ones((3, 2)), dims=("year", "lat"),
+        coords={"year": np.arange(3), "lat": [0.0, 1.0]},
+    )
+    freq = frequency_below(sample, clim)
+    assert bool(freq.isnull().all())
+
+
+def test_frequency_below_rejects_bad_inputs(record):
+    with pytest.raises(ValueError):
+        frequency_below(record.isel(year=0), record)          # sample lacks the dim
+    with pytest.raises(ValueError):
+        frequency_below(record, record.isel(year=0))          # climatology lacks the dim
+    with pytest.raises(ValueError):
+        frequency_below(record, record, q=1.5)                # q out of range

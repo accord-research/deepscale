@@ -8,7 +8,13 @@ from .flex_forecast import flex_forecast, FlexForecastResult
 from .pipelines import seasonal_mme, SeasonalMMEResult
 from .indices import Index
 from .calibrate import calibrate, LogitConfig
-from .climate import accumulate, percentile_of, rank_of_record, seasonal_stack
+from .climate import (
+    accumulate,
+    frequency_below,
+    percentile_of,
+    rank_of_record,
+    seasonal_stack,
+)
 from .analog import (
     AnalogSet, analogs_from_years, analogs_from_index, analogs_from_field, analogs_where,
 )
@@ -43,6 +49,7 @@ __all__ = [
     "calibrate",
     "LogitConfig",
     "accumulate",
+    "frequency_below",
     "percentile_of",
     "rank_of_record",
     "seasonal_stack",

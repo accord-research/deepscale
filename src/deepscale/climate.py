@@ -25,7 +25,13 @@ from scipy.stats import norm
 
 from .time import infer_cadence, season_step, season_times
 
-__all__ = ["accumulate", "percentile_of", "rank_of_record", "seasonal_stack"]
+__all__ = [
+    "accumulate",
+    "frequency_below",
+    "percentile_of",
+    "rank_of_record",
+    "seasonal_stack",
+]
 
 _HOW = {"sum", "mean", "max", "min"}
 
@@ -236,6 +242,62 @@ def percentile_of(
     # `(clim < values)` is False wherever `values` is NaN, so the comparison
     # silently reports percentile 0 for missing data. Restore the NaN.
     return frac.where(values.notnull())
+
+
+def frequency_below(
+    sample: xr.DataArray,
+    climatology: xr.DataArray,
+    *,
+    q: float = 1.0 / 3.0,
+    dim: str = "year",
+) -> xr.DataArray:
+    """Fraction of ``sample`` below the ``q``-th quantile of ``climatology``.
+
+    At every cell (all dims except ``dim``), the ``q``-th quantile of
+    ``climatology`` along ``dim`` sets a threshold, and the return is the share
+    of ``sample`` entries along ``dim`` that fall below it -- a value in
+    ``[0, 1]``. With ``q=1/3`` and each analog year's seasonal total as
+    ``sample``, this is the "below-normal frequency" composite: the fraction of
+    analog years that landed in the dry tercile at each location.
+
+    Both ``sample`` and ``climatology`` carry ``dim`` -- they may be the same
+    record, or ``sample`` may be a subset of it (the analog years). Every other
+    dimension is preserved, so the same call yields a grid, an admin unit, or a
+    single station series.
+
+    Parameters
+    ----------
+    sample : xr.DataArray
+        The values whose below-threshold frequency is wanted, carrying ``dim``.
+    climatology : xr.DataArray
+        The reference record defining the threshold, carrying ``dim``.
+    q : float in ``[0, 1]``
+        The quantile of ``climatology`` used as the threshold. ``1/3`` is the
+        below-normal tercile; ``0.1`` a 1-in-10 dry threshold, and so on.
+
+    Notes
+    -----
+    NaN in ``sample`` is excluded from the fraction, so a cell is scored over the
+    sample years it does have. A cell whose ``climatology`` has no valid year
+    (hence no threshold) returns NaN rather than a spurious 0.
+    """
+    if dim not in sample.dims:
+        raise ValueError(f"sample must carry {dim!r}; got {tuple(sample.dims)}")
+    if dim not in climatology.dims:
+        raise ValueError(
+            f"climatology must carry {dim!r}; got {tuple(climatology.dims)}"
+        )
+    if not 0.0 <= q <= 1.0:
+        raise ValueError(f"q must be in [0, 1], got {q}")
+
+    threshold = climatology.quantile(q, dim=dim, skipna=True)
+    threshold = threshold.drop_vars("quantile", errors="ignore")
+
+    # `.where(sample.notnull())` keeps NaN sample entries out of the mean (a bare
+    # `sample < threshold` would count them as False, understating the frequency).
+    below = (sample < threshold).where(sample.notnull())
+    freq = below.mean(dim, skipna=True)
+    return freq.where(threshold.notnull())
 
 
 def rank_of_record(
