@@ -260,3 +260,38 @@ def test_index_scatter_axis_labels_can_be_overridden(indices):
                             title="OND 2026").axes[0]
     assert ax.get_xlabel() == "RONI (C)"
     assert ax.get_title() == "OND 2026"
+
+
+# --- new styling options ---------------------------------------------------
+
+
+def test_index_scatter_fills_highlighted_points_when_given_a_colour(indices):
+    x, y = indices
+    fig = plot_index_scatter(x, y, highlight=[1997, 2015], highlight_color="#d62728")
+    # the highlight scatter is the collection with a non-'none' facecolor
+    filled = [c for c in fig.axes[0].collections
+              if c.get_facecolors().size and c.get_facecolors()[0][3] > 0]
+    assert filled  # at least one collection is actually filled
+
+
+def test_index_scatter_draws_a_trendline_and_r2(indices):
+    x, y = indices
+    fig = plot_index_scatter(x, y, trendline=True)
+    dashed = [ln for ln in fig.axes[0].lines if ln.get_linestyle() == "--"]
+    assert dashed, "expected an OLS trendline"
+    assert any("R²" in t.get_text() for t in fig.axes[0].texts)
+
+
+def test_index_scatter_trendline_annotation_can_be_suppressed(indices):
+    x, y = indices
+    fig = plot_index_scatter(x, y, trendline=True, trendline_annotate=False)
+    assert not any("R²" in t.get_text() for t in fig.axes[0].texts)
+
+
+def test_accumulation_colours_each_scenario_and_labels_it_by_year(result):
+    res, clim = result
+    fig = plot_accumulation_scenarios(res, color_by_scenario=True)
+    legend = fig.axes[0].get_legend()
+    labels = [t.get_text() for t in legend.get_texts()]
+    for yr in ("1997", "2005", "2015"):
+        assert yr in labels

@@ -80,6 +80,7 @@ def plot_accumulation_scenarios(
     ax=None,
     reduce=None,
     show_consensus: bool = True,
+    color_by_scenario: bool = False,
     climatology=None,
     title: str | None = None,
     ylabel: str = "accumulation",
@@ -123,10 +124,26 @@ def plot_accumulation_scenarios(
     x, x_label = _x_axis(curves)
     segments = np.asarray(result.segments.values)
 
-    for scenario in curves.scenario.values:
-        values = curves.sel(scenario=scenario).values
-        for start, stop in _contiguous_runs(segments == "analog"):
-            ax.plot(x[start:stop], values[start:stop], **_SEGMENT_STYLE["analog"])
+    if color_by_scenario:
+        # One colour per analog scenario, labelled by its scenario coordinate
+        # (the analog year) — the deck's colour-by-year convention.
+        import matplotlib.pyplot as _plt
+
+        scenarios = list(curves.scenario.values)
+        palette = _plt.get_cmap("turbo", max(len(scenarios), 1))
+        for i, scenario in enumerate(scenarios):
+            values = curves.sel(scenario=scenario).values
+            labelled = False
+            for start, stop in _contiguous_runs(segments == "analog"):
+                ax.plot(x[start:stop], values[start:stop], color=palette(i),
+                        linewidth=1.1, alpha=0.9, zorder=3,
+                        label=(str(scenario) if not labelled else None))
+                labelled = True
+    else:
+        for scenario in curves.scenario.values:
+            values = curves.sel(scenario=scenario).values
+            for start, stop in _contiguous_runs(segments == "analog"):
+                ax.plot(x[start:stop], values[start:stop], **_SEGMENT_STYLE["analog"])
 
     # Observed and forecast are identical across scenarios by construction, so
     # draw them once from the first member.
@@ -187,11 +204,14 @@ def plot_index_scatter(
     categories=None,
     colors=None,
     highlight=None,
+    highlight_color=None,
     forecast=None,
     forecast_marker="*",
     forecast_color="#f2c14e",
     forecast_label="Forecast",
     error_bars=None,
+    trendline: bool = False,
+    trendline_annotate: bool = True,
     labels: bool = False,
     xlabel: str | None = None,
     ylabel: str | None = None,
@@ -212,6 +232,13 @@ def plot_index_scatter(
         The categories in legend order. Defaults to the sorted unique values.
     highlight : sequence of year labels, optional
         Drawn with a heavier edge and annotated — the analog years.
+    highlight_color : colour, optional
+        Fill for the highlighted points. Defaults to unfilled (an open ring);
+        set e.g. ``"#d62728"`` for the deck's solid-red-dot convention.
+    trendline : bool
+        Draw the ordinary-least-squares best-fit line through the points.
+    trendline_annotate : bool
+        With ``trendline``, print the R² of the fit in the corner.
     forecast : tuple (x, y), optional
         The year being forecast, drawn as a star.
     error_bars : tuple, optional
@@ -246,9 +273,23 @@ def plot_index_scatter(
                        c=palette[i % len(palette)], edgecolor="white",
                        linewidth=0.7, zorder=3, label=str(category))
 
+    if trendline:
+        xv, yv = np.asarray(x.values, float), np.asarray(y.values, float)
+        ok = np.isfinite(xv) & np.isfinite(yv)
+        if ok.sum() >= 2:
+            slope, intercept = np.polyfit(xv[ok], yv[ok], 1)
+            xs = np.array([xv[ok].min(), xv[ok].max()])
+            ax.plot(xs, intercept + slope * xs, "--", color="#555555",
+                    linewidth=1.4, zorder=2)
+            if trendline_annotate:
+                r2 = np.corrcoef(xv[ok], yv[ok])[0, 1] ** 2
+                ax.annotate(f"R² = {r2:.2f}", xy=(0.05, 0.93),
+                            xycoords="axes fraction", fontsize=9, color="#333333")
+
     if highlight is not None:
         mask = np.isin(years, np.asarray(highlight))
-        ax.scatter(x.values[mask], y.values[mask], s=110, facecolor="none",
+        ax.scatter(x.values[mask], y.values[mask], s=110,
+                   facecolor=highlight_color if highlight_color is not None else "none",
                    edgecolor="#1a1a1a", linewidth=1.5, zorder=4)
         for year in years[mask]:
             ax.annotate(str(year), (float(x.sel(year=year)), float(y.sel(year=year))),
