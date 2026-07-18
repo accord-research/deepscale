@@ -21,6 +21,7 @@ from .reliability import plot_reliability_diagram
 from .scenarios import plot_accumulation_scenarios, plot_index_scatter
 from .maps import plot_field_map, plot_choropleth
 from .modes import plot_eof_modes, plot_cca_modes
+from .styled import TercileStyle, render_styled_terciles, plot_tercile_comparison
 
 __all__ = [
     "plot_domains",
@@ -36,4 +37,7 @@ __all__ = [
     "plot_choropleth",
     "plot_eof_modes",
     "plot_cca_modes",
+    "TercileStyle",
+    "render_styled_terciles",
+    "plot_tercile_comparison",
 ]

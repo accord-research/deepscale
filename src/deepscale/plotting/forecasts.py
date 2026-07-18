@@ -134,8 +134,14 @@ def _draw_geopandas_basemap(ax, extent):
     return True
 
 
-def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip"):
+def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip",
+                          style=None):
     """Dominant-tercile probability map (IRI/PyCPT convention).
+
+    If ``style`` is a :class:`deepscale.plotting.TercileStyle`, the map is drawn
+    in that house style instead (binned dominant-category palette + dry mask +
+    country clip + lakes) — the ICPAC/ACMAD operational look. All other arguments
+    except ``ax``/``title`` are then ignored.
 
     For each grid point, identifies the tercile (below/normal/above) with
     maximum probability and colors it according to the variable convention:
@@ -160,6 +166,18 @@ def plot_tercile_forecast(pr_fcst, *, ax=None, title=None, variable_kind="precip
 
     Input shape: (tercile=3, lat, lon), values in [0, 1] summing to 1.
     """
+    if style is not None:
+        import importlib
+        require_optional("matplotlib", _HINT)
+        plt = importlib.import_module("matplotlib.pyplot")
+        from .styled import render_styled_terciles
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(7.2, 7.2))
+        else:
+            fig = ax.figure
+        render_styled_terciles(ax, pr_fcst, style, title=title)
+        return fig
+
     if variable_kind == "precip":
         red_cat = 0
         below_label = "Below normal (drier)"

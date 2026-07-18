@@ -21,9 +21,11 @@ from .analog import (
 from .completion import complete, CompletionResult
 from .series import quantile_map, error_bounds, ErrorBounds
 from .io import write_terciles, tercile_mae
+from .combine import combine_terciles
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
 from .plotting.scenarios import plot_accumulation_scenarios, plot_index_scatter
 from .plotting.maps import natural_earth_borders, plot_field_map, plot_choropleth
+from .plotting.styled import TercileStyle, plot_tercile_comparison
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from . import strategies  # trigger registration
@@ -65,10 +67,13 @@ __all__ = [
     "ErrorBounds",
     "write_terciles",
     "tercile_mae",
+    "combine_terciles",
     "plot_terciles",
     "plot_accumulation_scenarios",
     "plot_index_scatter",
     "plot_field_map",
     "plot_choropleth",
     "natural_earth_borders",
+    "TercileStyle",
+    "plot_tercile_comparison",
 ]
