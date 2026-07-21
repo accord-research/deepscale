@@ -72,10 +72,11 @@ Calibration methods, passed as `method=` to `calibrate()`:
 |---|---|
 | `ereg` | Ensemble regression |
 | `logit` | Logistic index calibration |
+| `smoothed_regression` | Kharin et al. (2017) smoothed-coefficient calibration; season-aware, with deterministic and tercile-probability output |
 
 Ensemble strategies, passed as `strategy=` to `ensemble()`: `uniform`, `skill_weighted`, `bma`, `drop_worst`.
 
-Skill metrics, passed as `metrics=` to `skill()`: `rpss`, `roc`, `roc_area_below_normal`, `roc_area_above_normal`, `generalized_roc`, `pearson_r`, `spearman`, `2afc`, `root_mean_squared_error`, `heidke_skill_score`, `reliability`, `spread_error_ratio`, `spread_error_correlation`.
+Skill metrics, passed as `metrics=` to `skill()`: `rpss`, `roc`, `roc_area_below_normal`, `roc_area_above_normal`, `generalized_roc`, `pearson_r`, `spearman`, `2afc`, `root_mean_squared_error`, `mean_square_skill_score` (`msss`), `continuous_ranked_probability_skill_score` (`crpss`), `heidke_skill_score`, `reliability`, `spread_error_ratio`, `spread_error_correlation`.
 
 Cross-validation schemes: `loyo` (leave-one-year-out), `lko` (leave-k-out), `blocked`, `expanding`.
 
@@ -141,6 +142,36 @@ probs = deepscale.calibrate(
     ),
 )
 ```
+
+### Smoothed-coefficient regression (`method="smoothed_regression"`)
+
+Implements the postprocessing method of Kharin, Merryfield, Boer & Lee (2017, *Mon. Wea. Rev.* 145, 3545–3561). It rescales the ensemble-mean anomaly with a per-grid-cell regression coefficient, but where `ereg` fits each season independently, `smoothed_regression` smooths the coefficients *across the seasonal cycle* to suppress the sampling error that a ~30-year record leaves in each season's estimate. This recovers, and often improves, skill in weakly predictable regimes where naive per-season calibration degrades it.
+
+It is season-aware: inputs carry a `season` dimension (up to 12 rolling seasons) that this method owns. `temporal_sigma` sets the smoothing: `None` per-season, a float for cyclic Gaussian smoothing across the calendar, or `"constant"` for a single year-round coefficient. It is fit-and-apply (cross-validation is the caller's concern, as with `ereg`).
+
+Two output modes via `output_type`:
+
+```python
+# Deterministic: rescaled ensemble-mean anomaly (scored with the `msss` metric).
+adjusted = deepscale.calibrate(
+    hindcast, obs,                       # (season, year, member, lat, lon) / (season, year, lat, lon)
+    method="smoothed_regression",
+    output_type="deterministic",
+    temporal_sigma="constant",
+    forecast_year=2024,
+)
+
+# Probabilistic: below/normal/above tercile probabilities (scored with `crpss`, `reliability`).
+probs = deepscale.calibrate(
+    hindcast, obs,
+    method="smoothed_regression",
+    output_type="tercile",
+    distribution="gamma",                # "normal" for temperature, "gamma" for precipitation
+    forecast_year=2024,
+)
+```
+
+The probabilistic mode additionally calibrates the forecast spread and, for precipitation, works through a gamma distribution so probabilities never fall on negative rainfall. `deepscale.seasonal_coefficients(hindcast, obs, temporal_sigma=...)` exposes the fitted, smoothed coefficient field for inspection or plotting.
 
 Runnable examples: `examples/demo_ensemble_regression.py` (eReg) and `examples/demo_logistic_wvg.py` (logit).
 
