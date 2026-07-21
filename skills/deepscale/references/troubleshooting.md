@@ -1,4 +1,4 @@
-# Pitfalls, errors, and environment setup
+# Troubleshooting: errors and environment setup
 
 ## Environment
 
@@ -30,27 +30,11 @@
 | `seasonal_mme` raises about years | Needs ≥ 5 intersection years across obs and all hindcasts |
 | Whole regions NaN in tercile output | Degenerate boundaries (t33 == t67, e.g. dry cells) or uncalibratable cells (eReg < 3 finite years; logit < `min_years`) — masked by design |
 
-## Statistical discipline (worth restating)
+If a "wrong result" (rather than an error) is the problem, first check the discipline rules in `metrics-and-terciles.md` — leakage and metric/forecast mismatches produce plausible-looking but invalid skill numbers.
 
-- **Leakage:** `to_tercile(pred, obs)` on CV hindcasts leaks the held-out year through the boundaries. Production forecast → `to_tercile`; CV hindcasts → `to_tercile_cv`. `optimize()` handles this internally (uses train-fold obs).
-- **Two skill calls:** probabilistic metrics on `(year, tercile, lat, lon)` CV terciles; continuous metrics on the `(year, member, lat, lon)` CV ensemble.
-- **Honest ensembling:** keep the default safeguards; `member_cv_skill`, `effective_n`, `shrinkage_lambda` on `EnsembleResult` document what happened.
-- CCA numerics intentionally match CPT Fortran (standardize before SVD, empirical `rndx = n*p + 0.5` boundaries, leverage `= 1/n + Σ prjc²`, PEV `= s2_cv·(1+h)`, Student-t terciles with `dofr = n − n_modes − 1`). `scripts/reproduce.py` reproduces PyCPT step by step (r ≈ 0.9996).
+## Operational scripts (where to look; not covered in depth by this skill)
 
-## Rosetta integration
-
-Rosetta output feeds deepscale directly:
-
-```python
-import rosetta
-gcm_ds = rosetta.fetch("c3s/ecmwf-monthly", "precip", init="2024-02", target="MAM",
-                       region=[-5, 15, 33, 48], hindcast=(1993, 2016), year_index=True)
-obs_ds = rosetta.fetch("obs/era5", "precip", region=[-5, 15, 33, 48],
-                       hindcast=(1993, 2016), target="MAM", seasonal="mean")
-gcm = gcm_ds["precip"]   # (year, member, lat, lon)
-obs = obs_ds["precip"]   # (year, lat, lon)
-```
-
-`rosetta.assemble(roster, ...)` returns `{label: (hindcast, forecast)}` already shaped `(year, member, lat, lon)` with a guaranteed `member` dim (deepscale calls `hindcast.mean("member")`). Rosetta is also a soft dependency of `Index`: shapefile/geometry index regions import `rosetta.region.resolve_region` — bbox regions never need it.
-
-Larger operational drivers in the repo: `scripts/nightly/run_country.py` (per-country nightly pipeline), `scripts/s2s/run_issuance.py` (sub-seasonal testbed), `scripts/reproduce.py` (PyCPT parity), `notebooks/experimentB1.ipynb` (PyCPT vs DeepScale side-by-side).
+- `scripts/nightly/run_country.py` — per-country nightly pipeline (`python -m scripts.nightly.run_country`).
+- `scripts/s2s/run_issuance.py` — sub-seasonal testbed (`python -m scripts.s2s.run_issuance`).
+- `scripts/reproduce.py` — step-by-step PyCPT/CPT-Fortran parity reproduction (r ≈ 0.9996).
+- `notebooks/experimentB1.ipynb` — PyCPT vs DeepScale side-by-side comparison.

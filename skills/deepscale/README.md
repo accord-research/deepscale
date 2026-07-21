@@ -14,7 +14,7 @@ deepscale/
 │   ├── methods.md                    # downscale methods, strategies, CV schemes
 │   ├── metrics-and-terciles.md       # metric semantics + leakage discipline
 │   ├── plotting-reporting.md         # maps, SVSLRF PDFs, export
-│   └── pitfalls.md                   # error→cause table, env setup, rosetta
+│   └── troubleshooting.md            # error→cause table, env setup
 └── examples/                         # runnable scripts
 ```
 

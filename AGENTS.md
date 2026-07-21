@@ -16,7 +16,8 @@ The skill is a snapshot of the source. Any change that alters observable behavio
 | Methods, calibrators, ensemble strategies, CV schemes (add/remove/rename, parameter changes) | `skills/deepscale/references/methods.md` |
 | Metrics, tercile conversion, boundaries | `skills/deepscale/references/metrics-and-terciles.md` |
 | Plotting/reporting functions or export formats | `skills/deepscale/references/plotting-reporting.md` |
-| Error messages, extras, environment requirements, rosetta integration | `skills/deepscale/references/pitfalls.md` |
+| Error messages, extras, environment requirements | `skills/deepscale/references/troubleshooting.md` |
+| Rosetta integration / input data shapes | `skills/deepscale/SKILL.md` ("Getting data in") |
 | Anything user-facing | `README.md` if it covers the topic |
 
 Also update `skills/deepscale/examples/` if a change breaks or obsoletes an example. If you are unsure whether a change is documented, grep `skills/` and `README.md` for the function, method name, or parameter you touched — stale docs are treated as bugs.

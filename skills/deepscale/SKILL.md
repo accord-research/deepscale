@@ -88,7 +88,23 @@ Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-ana
 5. **`primary_metric` must be a leaf metric** — `roc_an`, not `roc` (which expands to a dict).
 6. **DL methods** (`requires_training=True`) refuse inline fitting: `ds.train(name, ..., save_to=path)` then `ds.downscale(..., weights_path=path)`.
 
-## Common pitfalls (full list: [references/pitfalls.md](references/pitfalls.md))
+## Getting data in (rosetta)
+
+Any xarray source works; rosetta produces the exact shapes deepscale expects:
+
+```python
+import rosetta
+gcm = rosetta.fetch("c3s/ecmwf-monthly", "precip", init="2024-02", target="MAM",
+                    region=[-5, 15, 33, 48], hindcast=(1993, 2016),
+                    year_index=True)["precip"]                    # (year, member, lat, lon)
+obs = rosetta.fetch("obs/era5", "precip", region=[-5, 15, 33, 48],
+                    hindcast=(1993, 2016), target="MAM",
+                    seasonal="mean")["precip"]                    # (year, lat, lon)
+```
+
+`rosetta.assemble(roster, ...)` returns `{label: (hindcast, forecast)}` already shaped `(year, member, lat, lon)` with a guaranteed `member` dim. Rosetta is optional at runtime — only shapefile/geometry `Index` regions import it.
+
+## Common pitfalls (errors + environment: [references/troubleshooting.md](references/troubleshooting.md))
 
 - `downscale(gcm=...)` is deprecated → `predictor_hindcast=`.
 - `ensemble(optimize_ensemble=True)` requires `obs` and can silently fall back to uniform weights (gate; `RuntimeWarning`).
@@ -109,4 +125,4 @@ Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-ana
 - [references/methods.md](references/methods.md) — downscale methods, calibrators, ensemble strategies, CV schemes, registries
 - [references/metrics-and-terciles.md](references/metrics-and-terciles.md) — every metric's semantics + tercile conversion discipline
 - [references/plotting-reporting.md](references/plotting-reporting.md) — maps, diagrams, SVSLRF PDFs, GeoTIFF/NetCDF export
-- [references/pitfalls.md](references/pitfalls.md) — errors, environment setup, rosetta integration
+- [references/troubleshooting.md](references/troubleshooting.md) — error → cause table, environment/install setup, test markers, operational scripts

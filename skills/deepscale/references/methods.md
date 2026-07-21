@@ -15,6 +15,10 @@ Everything here is selected by name string via registries (`deepscale/registry.p
 | `rank-analog` | `RankAnalogMethod` | `closing_size=50`, `gaussian_sigma=1.5`, `upscale_factor=None` | Rank within hindcast climatology → nearest-neighbor upscale → grey-closing + Gaussian smoothing → index into sorted obs climatology |
 | `corrdiff` | `CorrDiffMethod` | `device="cuda"`, `n_samples=10`, `target_variable="t2m"` | NVIDIA CorrDiff diffusion downscaler (CMIP6→ERA5), `is_pretrained=True`. Needs GPU deps installed manually (`torch`, `earth2studio`, `nvidia-physicsnemo` — not on PyPI); registered only if imports succeed. Input via `corrdiff_input=(tensor, coords)` from `prepare_corrdiff_input(dataset, target_time, model)`; `save`/`load` raise NotImplementedError |
 
+### CCA / CPT parity
+
+CCA numerics intentionally match CPT Fortran 17.8.3: standardize before SVD, empirical tercile boundaries with `rndx = n*p + 0.5`, leverage `= 1/n + Σ prjc²`, prediction-error variance `= s2_cv·(1+h)`, Student-t terciles with `dofr = n − n_modes − 1`. `scripts/reproduce.py` reproduces PyCPT step by step (r ≈ 0.9996 on predictions); the `agreement` pytest marker gates the parity suite. Changes to CCA must preserve this parity.
+
 Method base classes (`deepscale.methods.base`): `MethodBase` (`fit`, `predict`, `save`/`load`, `is_trained`, `requires_training`) and `ProbabilisticMethodBase` (adds `predict_distribution()`, consumed by `downscale(output_type="tercile")` via counting). Register your own with `deepscale.registry.register_method("name")`.
 
 ## Calibrators (`method=` to `calibrate()`)
