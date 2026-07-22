@@ -39,3 +39,16 @@ def test_deterministic_path_unchanged():
     out = deepscale.calibrate(fc, ob, method="smoothed_regression",
                               output_type="deterministic", temporal_sigma="constant", forecast_year=2010)
     assert out.dims == ("season", "lat", "lon")
+
+def test_tercile_requires_member_dim():
+    # tercile needs the ensemble spread; a member-less predictor is rejected up front.
+    fc, ob = _cube()
+    with pytest.raises(ValueError, match="requires an ensemble predictor"):
+        deepscale.calibrate(fc.mean("member"), ob, method="smoothed_regression",
+                            output_type="tercile", temporal_sigma="constant", forecast_year=2010)
+
+def test_tercile_unknown_distribution_raises():
+    fc, ob = _cube()
+    with pytest.raises(ValueError, match="unknown distribution"):
+        deepscale.calibrate(fc, ob, method="smoothed_regression", output_type="tercile",
+                            distribution="lognormal", temporal_sigma="constant", forecast_year=2010)

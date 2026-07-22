@@ -67,3 +67,23 @@ def test_smoothed_regression_separate_forecast_field_rejected():
     with pytest.raises(NotImplementedError, match="separate out-of-sample"):
         deepscale.calibrate(fc, ob, method="smoothed_regression",
                             output_type="deterministic", forecast=fc.isel(year=-1))
+
+
+def test_smoothed_regression_unknown_output_type_raises():
+    # smoothed_regression's OWN guard (distinct from the generic supports_deterministic
+    # gate): a recognized-but-unsupported output_type is rejected with a clear message.
+    fc, ob = _cube()
+    with pytest.raises(NotImplementedError, match="unknown output_type"):
+        deepscale.calibrate(fc, ob, method="smoothed_regression", output_type="exceedance")
+
+
+@pytest.mark.parametrize("temporal_sigma", [None, 1.5])
+def test_deterministic_temporal_sigma_dial_returns_finite_map(temporal_sigma):
+    # The per-season (None) and cyclic-Gaussian (float) dials both flow through the public
+    # calibrate() entry point, not just the 'constant' case the other tests exercise.
+    fc, ob = _cube()
+    out = deepscale.calibrate(fc, ob, method="smoothed_regression",
+                              output_type="deterministic", temporal_sigma=temporal_sigma,
+                              forecast_year=2010)
+    assert out.dims == ("season", "lat", "lon")
+    assert bool(np.isfinite(out).all())

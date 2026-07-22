@@ -69,7 +69,7 @@ result.tercile_forecast; result.skill_report.scores; result.metadata
 | `ds.downscale(predictor_hindcast, obs, method="bcsd", output_type="continuous")` | One method, one GCM → downscaled field or terciles | `(member,lat,lon)` or `(tercile,lat,lon)` |
 | `ds.optimize(gcm, obs, methods=[...], cv="loyo")` | Try methods under CV, keep the best | `OptimizeResult(method, score, forecast)` |
 | `ds.train(name, hindcast, obs, save_to=path)` | Fit once, checkpoint; required for `requires_training` (DL) methods | fitted `MethodBase` |
-| `ds.calibrate(predictor, obs, method="ereg"\|"logit"\|LogitConfig)` | Probabilistic MOS to terciles, **no regridding** | `(tercile,lat,lon)` |
+| `ds.calibrate(predictor, obs, method="ereg"\|"logit"\|"smoothed_regression"\|LogitConfig)` | MOS calibration, **no regridding** | `(tercile,lat,lon)`; `smoothed_regression` is season-aware → `(season,lat,lon)` deterministic or `(season,tercile,lat,lon)` |
 | `ds.ensemble(forecasts, obs, strategy="uniform", optimize_ensemble=...)` | Combine forecasts | `EnsembleResult(forecast, weights, ...)` |
 | `ds.skill(forecast, obs, metrics=..., spatial=...)` | Score a forecast | `SkillReport` (`.scores`, `.spatial`, `.to_pdf`) |
 | `ds.skill_compare({name: fc}, obs)` | Score several forecasts side by side | `ComparisonReport` (`.to_table`, `.to_heatmap`) |
@@ -77,7 +77,7 @@ result.tercile_forecast; result.skill_report.scores; result.metadata
 | `ds.prediction_error_variance(cv_preds, obs)` | Per-cell PEV from CV residuals | `(lat,lon)` |
 | `ds.flex_forecast(det_fcst, pev, obs, threshold)` | Exceedance probability P(Y > threshold) | `FlexForecastResult` |
 
-Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-analog`, `corrdiff` (GPU). Ensemble strategies: `uniform`, `skill_weighted`, `bma`, `drop_worst`. CV schemes: `loyo`, `lko`, `blocked`, `expanding`. Metrics: `rpss`, `roc`, `groc`, `reliability`, `hss`, `pearson_r`, `spearman`, `2afc`, `rmse`, `spread_error_ratio`, `spread_error_correlation` (+ presets `"svslrf"`, `"all"`). Full parameter tables: [references/methods.md](references/methods.md), [references/metrics-and-terciles.md](references/metrics-and-terciles.md).
+Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-analog`, `corrdiff` (GPU). Ensemble strategies: `uniform`, `skill_weighted`, `bma`, `drop_worst`. CV schemes: `loyo`, `lko`, `blocked`, `expanding`. Metrics: `rpss`, `roc`, `groc`, `reliability`, `hss`, `pearson_r`, `spearman`, `2afc`, `rmse`, `msss`, `crpss`, `spread_error_ratio`, `spread_error_correlation` (+ presets `"svslrf"`, `"all"`). Full parameter tables: [references/methods.md](references/methods.md), [references/metrics-and-terciles.md](references/metrics-and-terciles.md).
 
 ## Critical discipline rules
 
@@ -116,7 +116,7 @@ obs = rosetta.fetch("obs/era5", "precip", region=[-5, 15, 33, 48],
 
 - [examples/end_to_end_forecast.py](examples/end_to_end_forecast.py) — optimize → forecast → honest CV verification → PDF report
 - [examples/seasonal_mme_pipeline.py](examples/seasonal_mme_pipeline.py) — one-call multi-model MME with `seasonal_mme`
-- [examples/calibration.py](examples/calibration.py) — eReg multi-model calibration + logistic/WVG index calibration
+- [examples/calibration.py](examples/calibration.py) — eReg multi-model calibration, logistic/WVG index calibration, and season-aware smoothed_regression (deterministic + tercile)
 - [examples/ensemble_and_reporting.py](examples/ensemble_and_reporting.py) — strategies, safeguards, skill comparison, plots
 
 ## Reference files

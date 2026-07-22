@@ -47,10 +47,17 @@ All metrics are classes with `compute(forecast, obs, spatial=False, **kwargs)`; 
 | `spearman` | Rank correlation, NaN-aware |
 | `2afc` | P(forecast correctly ranks two random non-tied obs years); [0,1], 0.5 = no skill |
 | `root_mean_squared_error` (`rmse`) | RMSE |
+| `mean_square_skill_score` (`msss`) | 1 − MSE/Var(O); 1 = perfect, 0 = no better than the climatological mean, < 0 = worse than climatology. Averages `member` first; raises `ValueError` on tercile input. Pooled (`spatial=False`) averages the MSE and Var(O) fields separately before dividing (area-aggregated convention). Pairs with `smoothed_regression` `output_type="deterministic"` |
 | `spread_error_ratio` | `mean(spread)/mean(error)`; ≈1 = well calibrated. Needs `member` dim |
 | `spread_error_correlation` | Pearson r between per-year spread and error; > 0 desirable; NaN + warning if < 3 years. Needs `member` dim |
 
 Helper: `deepscale.metrics.spread_error.spread_error_diagnostics(forecast, obs, *, spatial=False) -> SpreadErrorDiagnostics(spread, error)`.
+
+### Parametric-Gaussian probabilistic (neither table above — a distinct input contract)
+
+| Name (aliases) | Range / no-skill | Semantics |
+|---|---|---|
+| `continuous_ranked_probability_skill_score` (`crpss`) | (−∞, 1]; 0 = climatology | CRPS skill score for a parametric Gaussian forecast against the climatological `N(0, std(obs))` reference. `forecast` is an `xr.Dataset` with `mu` and `sigma` data-vars over `(year[, lat, lon])` anomalies (NOT a `tercile` field); raises `ValueError` otherwise. Closed-form Gaussian CRPS (Gneiting et al. 2005). Building blocks `crps_normal` / `crps_climatology` / `crpss` are exposed on `deepscale.metrics.crpss` |
 
 ### Presets
 
