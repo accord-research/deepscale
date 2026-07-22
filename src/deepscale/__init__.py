@@ -8,6 +8,7 @@ from .flex_forecast import flex_forecast, FlexForecastResult
 from .pipelines import seasonal_mme, SeasonalMMEResult
 from .indices import Index
 from .calibrate import calibrate, LogitConfig
+from .methods.smoothed_regression import seasonal_coefficients
 from .io import write_terciles, tercile_mae
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
 from .plotting.forecasts import plot_field
@@ -35,6 +36,7 @@ __all__ = [
     "Index",
     "calibrate",
     "LogitConfig",
+    "seasonal_coefficients",
     "write_terciles",
     "tercile_mae",
     "plot_terciles",
