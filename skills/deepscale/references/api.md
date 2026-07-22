@@ -48,11 +48,13 @@ def calibrate(predictor=None, obs=None, *, method, forecast=None,
               **method_kwargs) -> xr.DataArray   # (tercile, lat, lon), sums to 1
 ```
 
-Probabilistic MOS to tercile probabilities **without changing resolution**. `method` is `"ereg"`, `"logit"`, or a `LogitConfig`. `predictor`/`predictor_hindcast` are aliases, as are `forecast`/`predictor_forecast`. `combine` supports only `"mean"` (per-model tercile maps averaged skipna, then renormalized onto the probability simplex; uncalibratable cells → NaN).
+MOS calibration **without changing resolution**. `method` is `"ereg"`, `"logit"`, `"smoothed_regression"`, or a `LogitConfig`. `predictor`/`predictor_hindcast` are aliases, as are `forecast`/`predictor_forecast`. `combine` supports only `"mean"` (per-model tercile maps averaged skipna, then renormalized onto the probability simplex; uncalibratable cells → NaN). The `(tercile, lat, lon)` return shape above is the `ereg`/`logit` case; `smoothed_regression` is season-aware and returns `(season, lat, lon)` (deterministic) or `(season, tercile, lat, lon)` (tercile).
 
 **eReg** — predictor `{model: (hindcast, forecast_or_None)}` or a single `(hindcast, forecast)` tuple, gridded, **already on the obs grid** (mismatch raises `ValueError`). Per grid cell: OLS of obs on ensemble-mean hindcast → Gaussian terciles with leverage-inflated prediction-error variance (Wilks 2006 eq. 6.22). Extra kwargs: `clip_negative=False` (precip), `threshold_source="obs"|"fitted"`, `native_years=False` (calibrate each model on its own year overlap with obs; floor 3 years), `forecast_year` (inferred if every forecast has exactly one year, else defaults to max obs year).
 
 **logit** — predictor `{model: index_series}` or one index series (dims: `year`); `forecast=` matching per-model scalar index value(s). Extra kwargs: `model="independent_binomial"|"multinomial"`, `backend="sklearn"|"statsmodels"` (auto-selects statsmodels when `significance` is set), `regularization=None`, `significance_mask=None`, `min_years=10`, `tercile_edges="exclusive"|"inclusive"`, `detrend=False`.
+
+**smoothed_regression** — Kharin et al. (2017) smoothed-coefficient postprocessing; a single ensemble hindcast (not a dict), season-aware: `predictor` `(season, year, member, lat, lon)`, `obs` `(season, year, lat, lon)`, same grid. Extra kwargs: `output_type="deterministic"|"tercile"` (default deterministic → `(season, lat, lon)`; tercile → `(season, tercile, lat, lon)`), `temporal_sigma=None|float|"constant"` (per-season / cyclic Gaussian across the seasonal cycle / one year-round coefficient), `distribution="normal"|"gamma"` (tercile only; gamma maps members+obs through the gamma CDF for non-negative variables), `constrained=True` (tercile only; analytic spread vs `False` CRPS-minimizing), `forecast_year` (must be a year present in the hindcast). Fit-and-apply on the hindcast: a separate out-of-sample `forecast=` raises `NotImplementedError`; tercile output without a `member` dim raises `ValueError`. Score deterministic output with `msss`, tercile output with `crpss`/`reliability`.
 
 ```python
 @dataclass(frozen=True)
@@ -217,5 +219,6 @@ def tercile_mae(probs, reference) -> float
 - `deepscale.registry.{register_method, register_calibrator, register_metric, register_strategy, get_method, get_metric, get_strategy, ...}` — extension points.
 - `deepscale.methods.base.{MethodBase, ProbabilisticMethodBase}` — subclass + `register_method` to add a method; `ProbabilisticMethodBase` adds `predict_distribution()`.
 - `deepscale.logistic.logistic_forecast(...)` — low-level per-cell logistic engine.
+- `deepscale.seasonal_coefficients(hindcast, obs, temporal_sigma=None)` — the fitted, season-smoothed `smoothed_regression` coefficient field `(season, lat, lon)`, for inspection or plotting. See `references/methods.md`.
 - `deepscale.metrics.spread_error.spread_error_diagnostics(forecast, obs, *, spatial=False)`.
 - `deepscale.plotting.*` — see `references/plotting-reporting.md`.

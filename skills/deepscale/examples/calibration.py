@@ -1,4 +1,4 @@
-"""Probabilistic calibration to tercile probabilities: eReg and logistic/WVG.
+"""Calibration with calibrate(): eReg, logistic/WVG, and smoothed_regression.
 
 calibrate() is Model Output Statistics — it does NOT change resolution and
 does NOT regrid. Put every gridded predictor on the obs grid first:
@@ -68,3 +68,41 @@ probs = ds.calibrate(
 probs = ds.calibrate(index_series, obs, method="logit", forecast=1.7, min_years=10)
 
 ds.plot_terciles(probs, title="WVG-calibrated MAM precip")
+
+# =========================================================================
+# 3. Smoothed-coefficient regression (Kharin et al. 2017) — season-aware
+# =========================================================================
+# Rescales the ensemble-mean anomaly with a per-cell regression coefficient
+# smoothed ACROSS the seasonal cycle. Inputs carry a `season` dim this method
+# owns: hindcast (season, year, member, lat, lon), obs (season, year, lat, lon),
+# same grid. Fit-and-apply on the hindcast: forecast_year must be a year present
+# in the hindcast (no separate out-of-sample forecast= field yet; CV is caller's).
+#
+# temporal_sigma: None (per-season) | float (cyclic Gaussian smoothing) |
+#                 "constant" (one year-round coefficient).
+
+# Deterministic: rescaled ensemble-mean anomaly (season, lat, lon). Score with `msss`.
+adjusted = ds.calibrate(
+    hindcast, obs,                       # season-aware cubes, on the obs grid
+    method="smoothed_regression",
+    output_type="deterministic",
+    temporal_sigma="constant",
+    forecast_year=2024,
+)
+assert adjusted.dims == ("season", "lat", "lon")
+
+# Probabilistic: below/normal/above terciles (season, tercile, lat, lon), sums to 1.
+# distribution="normal" for temperature, "gamma" for precipitation. Score with `crpss`.
+probs = ds.calibrate(
+    hindcast, obs,
+    method="smoothed_regression",
+    output_type="tercile",
+    distribution="gamma",
+    temporal_sigma=1.5,                  # float -> cyclic Gaussian smoothing
+    constrained=True,                    # analytic spread (False -> CRPS-minimizing)
+    forecast_year=2024,
+)
+assert probs.sizes["tercile"] == 3
+
+# Inspect the fitted, smoothed coefficient field directly:
+a = ds.seasonal_coefficients(hindcast, obs, temporal_sigma=1.5)   # (season, lat, lon)
