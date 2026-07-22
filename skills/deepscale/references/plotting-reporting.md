@@ -2,6 +2,21 @@
 
 Plotting/reporting live in `deepscale.plotting` and `deepscale.reporting`. Importing the subpackage does **not** load matplotlib/cartopy; each function gates on its optional deps and raises a clear `ImportError` with a `pip install accord-deepscale[plotting]` hint. Basemaps use cartopy when available, else geopandas with cached Natural Earth shapefiles (`~/.local/share/cartopy/shapefiles/natural_earth/...`), else plain axes.
 
+## Which plot for what you have
+
+| You have | Call |
+|---|---|
+| Tercile forecast `(tercile, lat, lon)` | `ds.plot_terciles(fc)` — IRI-style dominant-tercile map |
+| Two tercile forecasts to compare | `ds.plot_tercile_comparison(fc, reference)` |
+| Deterministic field `(lat, lon)` (ensemble mean, anomaly, ...) | `ds.plot_field(...)` / `plot_deterministic_forecast(...)` |
+| `SkillReport` with `spatial=True` | `plot_skill_maps(report, ["rpss", ...])`; full PDF: `report.to_pdf(...)` |
+| CV tercile hindcasts + obs | `plot_reliability_diagram(cv_terc, obs)` |
+| `ComparisonReport` from `skill_compare` | `.to_table()` / `.to_heatmap(path)` / `.to_pdf(path)` |
+| `FlexForecastResult` | `plot_exceedance_probability(...)`; point PDF vs climo: `plot_flex_pdf(...)` |
+| Fitted CCA method | `plot_eof_modes(...)` / `plot_cca_modes(...)` |
+| Predictor/predictand extents (pre-run sanity check) | `plot_domains(...)` |
+| Raw fetched GCM/obs data (pre-downscaling quick looks) | not deepscale's job — see the rosetta skill's `references/plotting.md` (plain xarray/cartopy recipes) |
+
 ## Top-level re-exports
 
 ```python
@@ -80,3 +95,11 @@ ds.write_terciles(tercile_fc, "forecast.nc", title="MAM precip", method="cca")
 report.to_geotiff("rpss.tif", "rpss")   # one spatial metric as EPSG:4326 GeoTIFF (rioxarray)
 ds.tercile_mae(candidate_probs, "reference.nc")  # MAE in percentage points vs a reference
 ```
+
+## Figures, saving, and headless use
+
+- No plot function calls `plt.show()` or writes a file — only the report methods (`to_pdf`, `to_heatmap`, `to_geotiff`) take a path. Save maps yourself: `plt.savefig("map.png", dpi=200, bbox_inches="tight")`.
+- Single-panel functions accept `ax=` so you can compose them into your own subplot grids; grid-producing functions (`plot_skill_maps`, `plot_eof_modes`, `plot_cca_modes`, `plot_tercile_comparison`) build their own figure and return it (or its axes) — save via the returned object.
+- Return values differ by function: `plot_tercile_forecast`/`plot_deterministic_forecast`/`plot_exceedance_probability` return the figure; `plot_field` returns the mappable (attach your own colorbar); `plot_tercile_comparison` returns `(axes, diff_mappable)`.
+- Headless/CI: set `MPLBACKEND=Agg` (or `matplotlib.use("Agg")` before importing pyplot).
+- Cartopy fallback applies only to the tercile/forecast maps (`forecasts.py`): without cartopy they fall back to geopandas Natural Earth outlines, then plain axes. `plot_skill_maps`, `plot_domains`, `plot_eof_modes`, and `plot_cca_modes` hard-require cartopy and raise `ImportError` without it.
