@@ -45,7 +45,7 @@ class LogitConfig:
     """
 
     index: Index
-    model: str = "icpac_independent"
+    model: str = "independent_binomial"
     predictor_level: str = "model_mean"
     detrend: bool = False
     significance: float | None = None
@@ -57,8 +57,8 @@ class LogitConfig:
 @quiet_all_nan_slices
 def calibrate(predictor=None, obs=None, *, method, forecast=None,
               forecast_year=None, predictor_hindcast=None,
-              predictor_forecast=None, combine="mean", verbose=False,
-              **method_kwargs):
+              predictor_forecast=None, combine="mean", output_type="tercile",
+              verbose=False, **method_kwargs):
     """Calibrate a predictor to tercile probabilities (no resolution change).
 
     Parameters
@@ -75,12 +75,20 @@ def calibrate(predictor=None, obs=None, *, method, forecast=None,
         Method-specific forecast selector (see the registered methods).
     combine : str
         Cross-model combination of the per-model tercile maps ("mean").
+    output_type : str
+        ``"tercile"`` (default) preserves the existing below/normal/above
+        probability output for every method. Methods that additionally
+        support deterministic output (``supports_deterministic = True``, e.g.
+        ``smoothed_regression``) accept other values; requesting a non-
+        "tercile" ``output_type`` from a method that doesn't support it
+        raises ``ValueError``.
 
     Returns
     -------
     xr.DataArray
         ``(tercile, lat, lon)`` probabilities, ``tercile=[0,1,2]``, summing to 1
-        per cell where defined.
+        per cell where defined (``output_type="tercile"``), or a method-
+        specific deterministic output otherwise.
     """
     if predictor is None and predictor_hindcast is not None:
         predictor = predictor_hindcast
@@ -88,6 +96,10 @@ def calibrate(predictor=None, obs=None, *, method, forecast=None,
         forecast = predictor_forecast
 
     if isinstance(method, LogitConfig):
+        if output_type != "tercile":
+            raise ValueError(
+                f"LogitConfig calibration is tercile-only; got output_type={output_type!r}."
+            )
         return _calibrate_logit_config(
             predictor, obs, forecast,
             config=method, forecast_year=forecast_year, combine=combine,
@@ -95,8 +107,13 @@ def calibrate(predictor=None, obs=None, *, method, forecast=None,
         )
 
     fn = get_calibrator(method)
+    if output_type != "tercile" and not getattr(fn, "supports_deterministic", False):
+        raise ValueError(
+            f"method {method!r} does not support output_type={output_type!r} "
+            "(only 'tercile')."
+        )
     return fn(predictor, obs, forecast=forecast, forecast_year=forecast_year,
-              combine=combine, verbose=verbose, **method_kwargs)
+              combine=combine, output_type=output_type, verbose=verbose, **method_kwargs)
 
 
 def _as_model_dict(predictor):
@@ -453,7 +470,7 @@ def _calibrate_ereg(predictor, obs, *, forecast=None, forecast_year=None,
 
 @register_calibrator("logit")
 def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
-                     combine="mean", model="icpac_independent", backend="sklearn",
+                     combine="mean", model="independent_binomial", backend="sklearn",
                      regularization=None, significance_mask=None, min_years=10,
                      tercile_edges: str = "exclusive",
                      detrend: bool = False, verbose=False, **_):
@@ -496,4 +513,211 @@ def _calibrate_logit(predictor, obs, *, forecast=None, forecast_year=None,
             print(f"[calibrate:logit] {name}: fit on index")
     out = _combine_models(maps, combine)
     out.attrs.update(method="logit", model=model, backend=backend)
+    return out
+
+
+@register_calibrator("smoothed_regression")
+def _calibrate_smoothed_regression(predictor, obs, *, forecast=None, forecast_year=None,
+                                   combine="mean", output_type="deterministic",
+                                   temporal_sigma=None, distribution="normal",
+                                   constrained=True, verbose=False, **_):
+    """Kharin et al. (2017) postprocessing. predictor: ensemble hindcast
+    (season, year, member, lat, lon); obs: (season, year, lat, lon), same grid.
+    temporal_sigma: None (per-season) | float (Gaussian smoothing) | 'constant' (one
+    coefficient for the year; for output_type="tercile" this is the mean of the
+    per-season a/b coefficients, matching the Kharin et al. (2017) probabilistic
+    experiment — deliberately different from the deterministic path's pooled-regression
+    'constant', see `methods.smoothed_regression.smooth_ab`).
+
+    output_type="deterministic" (default) returns the calibrated forecast (season, lat,
+    lon) for the resolved forecast year (mean-scaling only, ``a * anomaly``).
+
+    output_type="tercile" returns below/near/above-normal category probabilities
+    (season, tercile, lat, lon), tercile=[0,1,2], summing to 1, for the resolved forecast
+    year. Mean AND spread are scaled (a, b) and turned into a Gaussian predictive
+    distribution against per-(season,lat,lon) tercile boundaries:
+      - distribution="normal" (default): boundaries are the 33.3rd/66.7th percentiles of
+        the observed anomaly, per (season, lat, lon).
+      - distribution="gamma": intended for non-negative variables (e.g. precipitation). A
+        method-of-moments gamma is fit to the obs per (season, lat, lon); every ensemble
+        member and the obs are mapped through the gamma CDF into standard-normal space
+        (`methods.smoothed_regression.gamma_to_normal`) before the ensemble mean/spread,
+        anomalies, and (a, b) fit are computed — matching the Kharin et al. (2017)
+        probabilistic experiment (`prob_realdata/crpss_reliability.py`,
+        `fig2_fig3_illustrative.py`). Tercile boundaries are the empirical 33.3rd/66.7th
+        percentiles of the (transformed) observed anomaly, the same as the normal path:
+        the gamma-transformed obs are only approximately standard normal after the
+        method-of-moments fit, so the empirical percentiles are the faithful choice.
+    ``constrained`` (tercile only) is passed to
+    `methods.smoothed_regression.fit_ab_field`: True (default) sizes the spread
+    coefficient analytically; False numerically minimizes mean Gaussian CRPS.
+
+    Round 1 is fit-and-apply on the hindcast (like ereg): the target year must be one of
+    the years present in `predictor`, and a separate out-of-sample `forecast` field is not
+    yet supported. Cross-validated scoring is a caller concern."""
+    if output_type not in ("deterministic", "tercile"):
+        raise NotImplementedError(
+            f"smoothed_regression: unknown output_type={output_type!r}. Supported "
+            "output_type values are 'deterministic' and 'tercile'."
+        )
+    if forecast is not None:
+        raise NotImplementedError(
+            "smoothed_regression does not yet accept a separate out-of-sample `forecast` "
+            "field; it targets a year within the provided hindcast `predictor`. Pass the "
+            "target via `forecast_year`."
+        )
+
+    if output_type == "deterministic":
+        from .methods.smoothed_regression import seasonal_coefficients
+        a = seasonal_coefficients(predictor, obs, temporal_sigma=temporal_sigma)  # (season,lat,lon)
+        fbar = predictor.mean("member") if "member" in predictor.dims else predictor
+        f_clim = fbar.mean("year")
+        o_clim = obs.mean("year")
+        year = int(forecast_year) if forecast_year is not None else int(fbar["year"].max())
+        hindcast_years = set(int(y) for y in fbar["year"].values)
+        if year not in hindcast_years:
+            raise ValueError(
+                f"forecast_year={year} is not in the hindcast years "
+                f"[{min(hindcast_years)}..{max(hindcast_years)}]. smoothed_regression (round 1) "
+                "targets a year within the provided hindcast."
+            )
+        f_target = fbar.sel(year=year)
+        calibrated = o_clim + a * (f_target - f_clim)          # (season, lat, lon)
+        calibrated.attrs["method"] = "smoothed_regression"
+        calibrated.attrs["temporal_sigma"] = "None" if temporal_sigma is None else str(temporal_sigma)
+        return calibrated
+
+    return _calibrate_smoothed_regression_tercile(
+        predictor, obs, forecast_year=forecast_year, temporal_sigma=temporal_sigma,
+        distribution=distribution, constrained=constrained, verbose=verbose,
+    )
+
+
+_calibrate_smoothed_regression.supports_deterministic = True
+
+
+def _fit_gamma_field(obs_values):
+    """Method-of-moments gamma fit per (season, lat, lon) on ``obs_values`` (season, year,
+    lat, lon). Returns ``(shape, scale)``, each (season, lat, lon); NaN at any gridpoint/
+    season where the fit is degenerate (near-zero variance, too few finite values) —
+    mirrors the experiment's ``prob_realdata/crpss_reliability.py::_fit_gamma_field``."""
+    from .methods import smoothed_regression as pb
+
+    ns, _ny, nla, nlo = obs_values.shape
+    shape = np.full((ns, nla, nlo), np.nan)
+    scale = np.full((ns, nla, nlo), np.nan)
+    for s in range(ns):
+        for i in range(nla):
+            for j in range(nlo):
+                shape[s, i, j], scale[s, i, j] = pb.fit_gamma(obs_values[s, :, i, j])
+    return shape, scale
+
+
+def _gamma_transform_field(x, shape, scale):
+    """Map ``x`` (season, ..., lat, lon) through ``gamma_to_normal`` season-by-season;
+    ``shape``/``scale`` are (season, lat, lon). ``gamma_to_normal`` broadcasts shape/scale
+    over trailing (lat, lon) axes but not over season, so season is looped explicitly —
+    mirrors the experiment's ``prob_realdata/crpss_reliability.py::_gamma_transform``. A
+    NaN shape/scale (degenerate gridpoint/season) propagates to NaN output there."""
+    from .methods import smoothed_regression as pb
+
+    out = np.full(x.shape, np.nan)
+    with np.errstate(invalid="ignore"):
+        for s in range(x.shape[0]):
+            out[s] = pb.gamma_to_normal(x[s], shape[s], scale[s])
+    return out
+
+
+def _calibrate_smoothed_regression_tercile(predictor, obs, *, forecast_year, temporal_sigma,
+                                           distribution, constrained, verbose=False):
+    """``output_type="tercile"`` path for smoothed_regression: mean/spread scaling (a, b)
+    fit per (season, lat, lon) (`methods.smoothed_regression.fit_ab_field`), smoothed
+    across seasons (`smooth_ab`), applied to the resolved forecast year, and turned into
+    below/near/above category probabilities via a Gaussian predictive distribution
+    (`normal_category_probs`). Mirrors the Kharin et al. (2017) probabilistic experiment
+    (`prob_realdata/crpss_reliability.py`, `fig2_fig3_illustrative.py`); see
+    `_calibrate_smoothed_regression`'s docstring for the normal/gamma distinction.
+
+    Fit-and-apply on the full hindcast (no leave-one-out), consistent with the
+    deterministic path: the target year must be one of the years present in `predictor`.
+    """
+    from .methods import smoothed_regression as pb
+
+    if "member" not in predictor.dims:
+        raise ValueError(
+            "smoothed_regression output_type='tercile' requires an ensemble predictor "
+            "with a 'member' dimension (to estimate the ensemble spread)."
+        )
+    predictor = predictor.transpose("season", "year", "member", "lat", "lon")
+    obs = obs.transpose("season", "year", "lat", "lon")
+    seasons = predictor["season"].values
+    lat = predictor["lat"].values
+    lon = predictor["lon"].values
+
+    year = int(forecast_year) if forecast_year is not None else int(predictor["year"].max())
+    hindcast_years = set(int(y) for y in predictor["year"].values)
+    if year not in hindcast_years:
+        raise ValueError(
+            f"forecast_year={year} is not in the hindcast years "
+            f"[{min(hindcast_years)}..{max(hindcast_years)}]. smoothed_regression (round 1) "
+            "targets a year within the provided hindcast."
+        )
+    yi = int(np.where(predictor["year"].values == year)[0][0])
+
+    if distribution == "gamma":
+        # Fit the gamma to the obs, then map every ensemble member and the obs through the
+        # gamma CDF into standard-normal space *before* reducing over "member" — not just
+        # the ensemble mean — matching the experiment's _gamma_transform/precip_example.
+        shape, scale = _fit_gamma_field(obs.values)
+        pred_hat = _gamma_transform_field(predictor.values, shape, scale)  # (s,y,m,lat,lon)
+        obs_hat = _gamma_transform_field(obs.values, shape, scale)         # (s,y,lat,lon)
+        mu_f = pred_hat.mean(axis=2)             # ensemble mean, normal space (s,y,lat,lon)
+        sigma_f = pred_hat.std(axis=2)           # ensemble spread, normal space
+        o = obs_hat
+    elif distribution == "normal":
+        mu_f = predictor.values.mean(axis=2)
+        sigma_f = predictor.values.std(axis=2)
+        o = obs.values
+    else:
+        raise ValueError(
+            f"smoothed_regression output_type='tercile': unknown distribution="
+            f"{distribution!r} (expected 'normal' or 'gamma')."
+        )
+
+    f_clim = mu_f.mean(axis=1)                    # (season, lat, lon)
+    o_clim = o.mean(axis=1)
+    mu_anom = mu_f - f_clim[:, None]              # (season, year, lat, lon)
+    o_anom = o - o_clim[:, None]
+
+    # Tercile boundaries are the empirical 33.3/66.7 percentiles of the observed anomaly,
+    # for both distributions -- matching the experiment (crpss_reliability._tercile_bounds,
+    # fig2_fig3_illustrative). For gamma these are percentiles of the gamma_to_normal-space
+    # obs anomaly, which is only approximately (not exactly) standard normal after the
+    # method-of-moments fit, so the empirical percentiles differ from norm.ppf(1/3),(2/3)
+    # and are the faithful choice.
+    t_lo = np.percentile(o_anom, 100.0 / 3.0, axis=1)       # (season, lat, lon)
+    t_hi = np.percentile(o_anom, 200.0 / 3.0, axis=1)
+    degenerate = ~(t_lo < t_hi)
+    if np.any(degenerate):
+        t_hi = np.where(degenerate, t_lo + 1e-6, t_hi)
+
+    a, b = pb.fit_ab_field(mu_anom, sigma_f, o_anom, constrained=constrained)
+    a, b = pb.smooth_ab(a, b, temporal_sigma)
+
+    mu_ho = a * mu_anom[:, yi]                    # (season, lat, lon)
+    sig_ho = np.abs(b) * sigma_f[:, yi]
+
+    probs = pb.normal_category_probs(mu_ho, sig_ho, t_lo, t_hi)   # (3, season, lat, lon)
+
+    out = xr.DataArray(
+        np.moveaxis(probs, 0, 1),
+        dims=("season", "tercile", "lat", "lon"),
+        coords={"season": seasons, "tercile": [0, 1, 2], "lat": lat, "lon": lon},
+    )
+    out.attrs["method"] = "smoothed_regression"
+    out.attrs["distribution"] = distribution
+    out.attrs["constrained"] = bool(constrained)
+    out.attrs["temporal_sigma"] = "None" if temporal_sigma is None else str(temporal_sigma)
+    if verbose:
+        print(f"[calibrate:smoothed_regression] tercile ({distribution}) forecast_year={year}")
     return out

@@ -21,12 +21,14 @@ from .analog import (
 )
 from .completion import complete, CompletionResult
 from .series import quantile_map, error_bounds, ErrorBounds
+from .methods.smoothed_regression import seasonal_coefficients
 from .io import write_terciles, tercile_mae
 from .combine import combine_terciles, mask_by_skill, dry_mask
 from .plotting.forecasts import plot_tercile_forecast as plot_terciles
 from .plotting.scenarios import plot_accumulation_scenarios, plot_index_scatter
 from .plotting.maps import natural_earth_borders, plot_field_map, plot_choropleth
-from .plotting.styled import TercileStyle, plot_tercile_comparison
+from .plotting.style import TercileStyle
+from .plotting.forecasts import plot_field, plot_tercile_comparison, render_styled_terciles
 from . import methods     # trigger registration
 from . import metrics     # trigger registration
 from .metrics import loo_predict, loo_corr, permutation_test, fdr
@@ -69,6 +71,7 @@ __all__ = [
     "quantile_map",
     "error_bounds",
     "ErrorBounds",
+    "seasonal_coefficients",
     "write_terciles",
     "tercile_mae",
     "combine_terciles",
@@ -85,5 +88,7 @@ __all__ = [
     "plot_choropleth",
     "natural_earth_borders",
     "TercileStyle",
+    "plot_field",
+    "render_styled_terciles",
     "plot_tercile_comparison",
 ]

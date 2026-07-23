@@ -16,7 +16,7 @@ forecast primitive whose predictor is a 1-D index series.
 
 Two formulations (``model=``):
 
-- ``"icpac_independent"`` (default): three independent binomial logits, one per
+- ``"independent_binomial"`` (default): three independent binomial logits, one per
   category indicator, then renormalize to sum to 1. Matches ICPAC's operational
   per-category ``glm(..., family="binomial")`` recipe.
 - ``"multinomial"``: a single multinomial logit over the 3-class label;
@@ -187,7 +187,7 @@ def logistic_forecast(
     obs,
     index_forecast,
     *,
-    model: str = "icpac_independent",
+    model: str = "independent_binomial",
     backend: str = "sklearn",
     regularization: float | None = None,
     significance_mask: float | None = None,
@@ -205,8 +205,8 @@ def logistic_forecast(
         longitude). Tercile boundaries are computed from this climatology.
     index_forecast : float or scalar DataArray
         The predictor index value for the forecast year.
-    model : {"icpac_independent", "multinomial"}
-        Formulation. ``icpac_independent`` fits one binomial logit per category
+    model : {"independent_binomial", "multinomial"}
+        Formulation. ``independent_binomial`` fits one binomial logit per category
         then renormalizes; ``multinomial`` fits a single coherent 3-class logit.
     backend : {"sklearn", "statsmodels"}
         Estimator library. ``statsmodels`` is required for ``significance_mask``.
@@ -232,9 +232,9 @@ def logistic_forecast(
         dims ``(tercile, lat, lon)``, ``tercile=[0, 1, 2]`` = below/normal/above,
         probabilities in ``[0, 1]`` summing to 1 per cell.
     """
-    if model not in ("icpac_independent", "multinomial"):
+    if model not in ("independent_binomial", "multinomial"):
         raise ValueError(
-            f"model must be 'icpac_independent' or 'multinomial'; got {model!r}."
+            f"model must be 'independent_binomial' or 'multinomial'; got {model!r}."
         )
     if significance_mask is not None:
         if backend != "statsmodels":
@@ -292,7 +292,7 @@ def logistic_forecast(
                 regularization=regularization, min_years=min_years,
             )
             continue
-        # icpac_independent: one binomial logit per category, then renormalize.
+        # independent_binomial: one binomial logit per category, then renormalize.
         cat_probs = np.full(3, np.nan)
         below_pval = np.nan
         for cat in (0, 1, 2):

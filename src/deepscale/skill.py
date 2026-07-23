@@ -69,7 +69,7 @@ class SkillReport:
         keeps the on-disk fan-out explicit.
         """
         from ._optional import require_optional
-        require_optional("rioxarray", "pip install deepscale[plotting]")
+        require_optional("rioxarray", "pip install accord-deepscale[plotting]")
         import rioxarray  # noqa: F401  (registers the .rio accessor on xarray)
 
         if metric not in self.spatial:

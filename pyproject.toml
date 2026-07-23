@@ -1,8 +1,19 @@
 [project]
-name = "deepscale"
-version = "0.2.0"
+name = "accord-deepscale"
+version = "0.1.0"
 description = "Modular downscaling, calibration, and ensemble framework for seasonal climate forecasts"
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "accord-research" }]
+keywords = ["climate", "seasonal-forecasting", "downscaling", "calibration", "xarray"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+]
 dependencies = [
     "xarray",
     "numpy",
@@ -12,7 +23,16 @@ dependencies = [
     "tqdm",
     "cfgrib>=0.9.15.1",
     "eccodeslib>=2.46.2.19",
+    # Plotting/reporting stack is core: users want to see and save their
+    # forecast maps, tercile plots, and skill/PDF reports out of the box.
+    "matplotlib>=3.7",
+    "cartopy>=0.22",
+    "rioxarray",
 ]
+
+[project.urls]
+Homepage = "https://github.com/accord-research/deepscale"
+Repository = "https://github.com/accord-research/deepscale"
 
 [project.optional-dependencies]
 plot = ["matplotlib"]
@@ -30,6 +50,18 @@ validation = [
 # GPU dependencies for CorrDiff (torch, earth2studio, physicsnemo) are not on
 # PyPI and must be installed manually.  See src/deepscale/methods/corrdiff.py
 # for instructions.
+
+[tool.uv]
+# The nightly workflow installs rosetta into this env via
+# `uv pip install -e ./rosetta` (see .github/workflows/s2s_testbed.yml).
+# rosetta's core deps are mutually unsatisfiable out of the box: sheerwater
+# hard-pins zarr==2.18.3 while icechunk>=2 needs zarr>=3.1.0. rosetta carries
+# its own [tool.uv] override for this, but `uv pip install` reads overrides
+# from the project in the working directory (deepscale), not from the package
+# being installed, so we must repeat it here. sheerwater's zarr pin is stale
+# (it reads through xarray's zarr backend and works under zarr 3), so forcing
+# zarr>=3.1.0 is safe.
+override-dependencies = ["zarr>=3.1.0"]
 
 [build-system]
 requires = ["hatchling"]

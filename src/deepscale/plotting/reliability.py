@@ -4,7 +4,7 @@ import numpy as np
 from .._optional import require_optional
 
 
-_HINT = "pip install deepscale[plotting]"
+_HINT = "pip install accord-deepscale[plotting]"
 
 
 def plot_reliability_diagram(forecast, obs, *, n_bins=5, ax=None, title=None):
