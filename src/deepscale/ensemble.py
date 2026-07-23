@@ -386,3 +386,62 @@ def ensemble(forecasts, obs, *, strategy="uniform", optimize_ensemble=False,
         pev=pev,
         member_contributions=member_contributions,
     )
+
+
+def pool_ensembles(arrays, *, member_dim="member", regrid_to="first", align_years=True):
+    """Pool several per-model ensembles into one predictor cube along the member dimension.
+
+    Each input is one model's ensemble carrying its own ``member_dim``. The members are renumbered
+    to a single contiguous range so they stay unique across models, the grids are aligned by linear
+    interpolation onto a reference, the shared years are intersected, and the arrays are
+    concatenated along ``member_dim``. The result — a single ``(year, member, lat, lon)`` array —
+    is the multi-model predictor for :func:`deepscale.optimize`. (``seasonal_mme`` pools internally
+    from its ``predictor_tracks``, so it does not need this.)
+
+    Parameters
+    ----------
+    arrays : sequence of xarray.DataArray
+        Per-model ensembles (``None`` entries are skipped). Must contain at least one array.
+    member_dim : str, default "member"
+        Name of the ensemble dimension.
+    regrid_to : "first" | xarray.DataArray | (lat, lon), default "first"
+        Reference grid; every array is linearly interpolated onto it (a no-op where the grid
+        already matches). ``"first"`` uses the first array's grid.
+    align_years : bool, default True
+        Intersect the ``year`` coordinate across all arrays before concatenating.
+    """
+    from ._spatial import spatial_dims as _resolve_spatial
+
+    arrays = [a for a in arrays if a is not None]
+    if not arrays:
+        raise ValueError("pool_ensembles: no arrays to pool (all None or empty sequence).")
+
+    lat_dim, lon_dim = _resolve_spatial(arrays[0], context="pool_ensembles")
+    if regrid_to == "first":
+        ref_lat, ref_lon = arrays[0][lat_dim], arrays[0][lon_dim]
+    elif isinstance(regrid_to, xr.DataArray):
+        rlat, rlon = _resolve_spatial(regrid_to, context="pool_ensembles regrid_to")
+        ref_lat, ref_lon = regrid_to[rlat], regrid_to[rlon]
+    else:
+        ref_lat, ref_lon = regrid_to
+
+    aligned = []
+    for a in arrays:
+        alat, alon = _resolve_spatial(a, context="pool_ensembles")
+        if not (a[alat].equals(ref_lat) and a[alon].equals(ref_lon)):
+            a = a.interp({alat: ref_lat, alon: ref_lon})
+        aligned.append(a)
+
+    if align_years:
+        years = sorted(set.intersection(*[set(a["year"].values.tolist()) for a in aligned]))
+        if not years:
+            raise ValueError("pool_ensembles: the arrays share no common years.")
+        aligned = [a.sel(year=years) for a in aligned]
+
+    renumbered, offset = [], 0
+    for a in aligned:
+        n = a.sizes[member_dim]
+        a = a.assign_coords({member_dim: np.arange(offset, offset + n)})
+        renumbered.append(a)
+        offset += n
+    return xr.concat(renumbered, dim=member_dim)

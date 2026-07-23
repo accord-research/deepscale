@@ -122,3 +122,52 @@ def combine_terciles(components, weights=None, *, regrid_to=None, renormalize=Tr
         combined = combined.transpose("tercile", "lat", "lon").assign_coords(tercile=_TERCILE)
     combined.name = "tercile_probability"
     return combined
+
+
+def mask_by_skill(forecast, skill, *, threshold, keep="above"):
+    """Blank (set NaN) the forecast cells where a skill field fails a threshold.
+
+    A standard forecast post-processing step: only issue a forecast where the model has
+    demonstrated skill. Works on any gridded forecast (tercile probabilities or a continuous
+    field) — cells that fail are set to NaN, so a downstream combiner (``combine_terciles``, which
+    skips NaN per cell) or a plotter simply omits them.
+
+    Parameters
+    ----------
+    forecast : xarray.DataArray
+        The forecast to mask (broadcast against ``skill`` over lat/lon).
+    skill : xarray.DataArray
+        A per-cell skill score on the same grid.
+    threshold : float
+        The cut. ``None`` or a value ``<= 0`` with ``keep="above"`` is a no-op (returns the
+        forecast unchanged) — matching the common "skill-mask off" configuration.
+    keep : {"above", "below"}, default "above"
+        Keep cells whose skill is strictly above (``"above"``) or below (``"below"``) the
+        threshold; the rest are blanked. NaN skill is always blanked.
+    """
+    if keep not in ("above", "below"):
+        raise ValueError(f"keep must be 'above' or 'below', got {keep!r}")
+    if threshold is None or (keep == "above" and threshold <= 0):
+        return forecast
+    if keep == "above":
+        good = skill.notnull() & (skill > threshold)
+    else:
+        good = skill.notnull() & (skill < threshold)
+    return forecast.where(good)
+
+
+def dry_mask(climatology, *, threshold, like=None):
+    """Boolean mask of cells too dry to forecast: True where a climatological total < ``threshold``.
+
+    ``climatology`` is a per-cell seasonal (or annual) total on a lat/lon grid — how it was
+    accumulated (from monthly rates, daily data, etc.) is the caller's concern; this applies the
+    threshold and, if ``like`` is given, regrids the boolean mask onto that grid (nearest-ish via a
+    0.5 cut on the interpolated float mask). Returns a bool DataArray.
+    """
+    mask = climatology < threshold
+    if like is not None:
+        lat, lon = _target_grid(like, mask)          # numpy arrays
+        if not (np.array_equal(mask["lat"].values, lat)
+                and np.array_equal(mask["lon"].values, lon)):
+            mask = mask.astype(float).interp(lat=lat, lon=lon) > 0.5
+    return mask

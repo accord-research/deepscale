@@ -30,6 +30,7 @@ __all__ = [
     "frequency_below",
     "percentile_of",
     "rank_of_record",
+    "seasonal_reduce",
     "seasonal_stack",
 ]
 
@@ -106,6 +107,30 @@ def seasonal_stack(
     return stacked.assign_coords(
         season_start=("year", [season_times(season, y, cadence)[0] for y in kept])
     )
+
+
+def seasonal_reduce(da, months, *, how="sum", time_dim="time"):
+    """Reduce a sub-annual series to one value per year over a set of calendar months.
+
+    Selects the given ``months`` (a list of 1–12 integers) and reduces each year's selected
+    timesteps to a single value along ``time_dim``, replacing it with a ``year`` dimension. For
+    example ``seasonal_reduce(precip, [10, 11, 12])`` gives each year's OND rainfall total, and
+    ``how="mean"`` the OND mean. Any non-time dims (lat/lon/member/…) survive.
+
+    This is the seasonal-aggregation core repeated across seasonal-forecast workflows (select the
+    target months, total them per year); region selection, coarsening and spatial means are left to
+    the caller.
+    """
+    if how not in _HOW:
+        raise ValueError(f"how must be one of {sorted(_HOW)}, got {how!r}")
+    if time_dim not in da.dims:
+        raise ValueError(f"{time_dim!r} not found on data with dims {tuple(da.dims)}")
+    months = [int(m) for m in months]
+    if not months or any(not 1 <= m <= 12 for m in months):
+        raise ValueError(f"months must be a non-empty list of integers in 1..12, got {months!r}")
+    sub = da.sel({time_dim: da[time_dim].dt.month.isin(months)})
+    grouped = sub.groupby(f"{time_dim}.year")
+    return getattr(grouped, how)()
 
 
 def accumulate(
