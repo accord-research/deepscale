@@ -640,3 +640,18 @@ def plot_flex_pdf(fcst_mu, fcst_scale, climo_mu, climo_scale, *,
     ax.set_title(f"PDF at lon={location[0]}, lat={location[1]}")
     ax.legend()
     return fig
+
+
+def render_styled_terciles(ax, probs, style, *, title=None, small=False):
+    """Draw a binned dominant-tercile map with ``style`` onto an existing ``ax``.
+
+    Thin wrapper over :func:`plot_tercile_forecast` for multi-panel figures: it renders the styled
+    (binned dominant-category palette) tercile map onto the supplied ``ax``. ``small=True`` drops
+    the category legend and the axis ticks, for compact grids. ``probs`` is a
+    ``(tercile, lat, lon)`` fractional-probability DataArray. Returns ``ax``.
+    """
+    plot_tercile_forecast(probs, style=style, ax=ax, title=title, legend=not small)
+    if small:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    return ax

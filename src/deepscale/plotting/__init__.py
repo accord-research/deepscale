@@ -15,13 +15,16 @@ from .forecasts import (
     plot_tercile_forecast,
     plot_field,
     plot_tercile_comparison,
+    render_styled_terciles,
     plot_deterministic_forecast,
     plot_exceedance_probability,
     plot_flex_pdf,
 )
 from .reliability import plot_reliability_diagram
+from .scenarios import plot_accumulation_scenarios, plot_index_scatter
+from .maps import plot_field_map, plot_choropleth
 from .modes import plot_eof_modes, plot_cca_modes
-from .style import TercileStyle   # noqa: F401
+from .style import TercileStyle
 
 __all__ = [
     "plot_domains",
@@ -33,7 +36,12 @@ __all__ = [
     "plot_exceedance_probability",
     "plot_flex_pdf",
     "plot_reliability_diagram",
+    "plot_accumulation_scenarios",
+    "plot_index_scatter",
+    "plot_field_map",
+    "plot_choropleth",
     "plot_eof_modes",
     "plot_cca_modes",
     "TercileStyle",
+    "render_styled_terciles",
 ]

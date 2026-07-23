@@ -33,6 +33,34 @@ def _svd_pca(X, n_components):
     return U[:, :nc], Vt[:nc, :], s[:nc]
 
 
+_SV_RTOL = 1e-10
+
+
+def _project_by_sv(num, sv):
+    """Divide EOF projections by singular values, dropping degenerate modes.
+
+    Modes whose singular value is negligible relative to the leading one carry no real variance;
+    dividing by them amplifies rounding noise without bound. Observed in practice: a near-rank-
+    deficient predictor produced CPT leverages of ~1e91 (statistical leverage is bounded in [0, 1],
+    so these are numerical artefacts). Because ``seasonal_mme``'s pooled aggregation averages
+    leverages across models, one such model inflated the MME predictive variance to effectively
+    infinity, collapsing every tercile forecast to a constant [0.5, 0, 0.5] — i.e. GROC exactly
+    0.500 regardless of the predictor. Zeroing the degenerate modes (the same policy as
+    ``numpy.linalg.pinv``'s rcond cutoff) keeps the projection finite and well-posed.
+    """
+    sv = np.asarray(sv, dtype=float)
+    num = np.asarray(num, dtype=float)
+    out = np.zeros(num.shape, dtype=float)
+    if sv.size == 0:
+        return out
+    smax = float(np.max(np.abs(sv))) if np.isfinite(sv).any() else 0.0
+    if not np.isfinite(smax) or smax <= 0.0:
+        return out
+    keep = np.abs(sv) > smax * _SV_RTOL
+    out[keep] = num[keep] / sv[keep]
+    return out
+
+
 @register_method("cca")
 class CCAMethod(MethodBase):
     def __init__(self, n_modes=3, x_eof_modes=None, y_eof_modes=None,
@@ -144,6 +172,16 @@ class CCAMethod(MethodBase):
 
         self.eofx_, self.tsx_, self.svx_ = _svd_pca(X_c, x_eof_modes)
         self.eofy_, self.tsy_, self.svy_ = _svd_pca(Y_c, y_eof_modes)
+        # A rank-0 predictor (no interannual variance at all — e.g. a field that arrived
+        # zero-filled from a failed OPeNDAP transfer) makes every projection 0/0. Silently
+        # returning NaN forecasts hides a data problem as a modelling result, so fail loudly.
+        if self.svx_.size == 0 or not np.isfinite(self.svx_).any() \
+                or float(np.max(np.abs(self.svx_))) <= 0.0:
+            raise ValueError(
+                "CCA fit: the predictor has no interannual variance (all X singular values are "
+                "zero). This usually means the predictor field was fetched as all-zeros or "
+                "constant — check the source data rather than the model configuration."
+            )
         nxe = len(self.svx_)
         nye = len(self.svy_)
 
@@ -180,7 +218,7 @@ class CCAMethod(MethodBase):
         if self.x_std_ is not None:
             x_anom = x_anom / self.x_std_
         x_anom = x_anom * self.x_wt_
-        rwk = self.eofx_.T @ x_anom.ravel() / self.svx_
+        rwk = _project_by_sv(self.eofx_.T @ x_anom.ravel(), self.svx_)
         prjc = self.s_ @ rwk
         return 1.0 / n + float(np.sum(prjc)) ** 2
 
@@ -216,7 +254,7 @@ class CCAMethod(MethodBase):
                 x_anom = x_anom / self.x_std_
             x_anom = x_anom * self.x_wt_
 
-            rwk = self.eofx_.T @ x_anom / self.svx_
+            rwk = _project_by_sv(self.eofx_.T @ x_anom, self.svx_)
             prjc = self.s_ @ rwk * self.mu_
             rwk_y = self.r_ @ prjc * self.svy_
             fcast = self.eofy_ @ rwk_y

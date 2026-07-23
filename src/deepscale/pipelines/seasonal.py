@@ -200,11 +200,16 @@ def seasonal_mme(
                     "seasonal_mme: tercile_method='cpt' but no per-model leverages "
                     "were collected; was a non-CCA method used?"
                 )
-            # Average leverages across (track, model) per year. Leverage is a
-            # per-year scalar; averaging gives an MME-level leverage estimate.
-            n_models = len(per_model_leverages)
-            levs = [sum(vals) / n_models
-                    for vals in zip(*per_model_leverages.values())]
+            # Average leverages across (track, model) per year to get an MME-level estimate.
+            # Skip any non-finite per-model value: a single degenerate model must not poison the
+            # average (a NaN/Inf leverage would flow into pesd = sqrt(s2*(1+lev)) and collapse the
+            # whole tercile forecast). cca._project_by_sv prevents the finite-but-absurd case at
+            # source; this handles the non-finite case defensively. For all-finite inputs — the
+            # healthy path — this is identical to a plain mean.
+            levs = []
+            for vals in zip(*per_model_leverages.values()):
+                finite = [v for v in vals if np.isfinite(v)]
+                levs.append(sum(finite) / len(finite) if finite else np.nan)
             tercile_kwargs["leverages"] = levs
             tercile_kwargs["n_modes"] = (cpt_args or {}).get("n_modes", 3)
 

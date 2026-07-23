@@ -22,6 +22,7 @@ Limitations (§19.1):
 import numpy as np
 import xarray as xr
 
+from ._qm_kernel import empirical_map, parametric_map
 from .base import MethodBase
 from ..registry import register_method
 
@@ -82,29 +83,19 @@ class QuantileMappingMethod(MethodBase):
         )
 
     def _empirical_map(self, x):
-        """F_obs^-1(F_gcm(x)) per cell via plotting-position CDFs."""
-        n = self.n_years_
-        pp = (np.arange(n) + 0.5) / n  # midpoint plotting positions
+        """F_obs^-1(F_gcm(x)) per cell, via the shared transfer function."""
         out = np.empty(x.shape, dtype=float)
         for i in range(x.shape[0]):
             for j in range(x.shape[1]):
-                gcm_col = self.gcm_sorted_[:, i, j]
-                obs_col = self.obs_sorted_[:, i, j]
-                if (
-                    not np.isfinite(x[i, j])
-                    or not np.all(np.isfinite(gcm_col))
-                    or not np.all(np.isfinite(obs_col))
-                ):
-                    out[i, j] = np.nan
-                    continue
-                # np.interp clamps out-of-range inputs to the endpoint values,
-                # i.e. no tail extrapolation (documented limitation).
-                q = np.interp(x[i, j], gcm_col, pp)   # F_gcm(x)
-                out[i, j] = np.interp(q, pp, obs_col)  # F_obs^-1(q)
+                # Clamped tails: a bias corrector must not invent values the
+                # observations have never shown (documented limitation).
+                out[i, j] = empirical_map(
+                    x[i, j], self.gcm_sorted_[:, i, j], self.obs_sorted_[:, i, j]
+                )
         return out
 
     def _parametric_map(self, x):
         """Gaussian quantile matching: rescale the GCM anomaly into obs units."""
-        std = np.where(self.gcm_std_ < 1e-12, 1.0, self.gcm_std_)
-        z = (x - self.gcm_mean_) / std
-        return self.obs_mean_ + z * self.obs_std_
+        return parametric_map(
+            x, self.gcm_mean_, self.gcm_std_, self.obs_mean_, self.obs_std_
+        )
