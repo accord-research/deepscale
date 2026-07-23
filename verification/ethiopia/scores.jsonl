@@ -927,3 +927,56 @@
 {"country": "ethiopia", "issuance": "2026-07-09", "method": "climatology", "target_dekad": "2026-07-01", "acc": NaN, "rmse": 2.1914820671081543, "bias": 1.217765212059021}
 {"country": "ethiopia", "issuance": "2026-07-09", "method": "rank-analog", "target_dekad": "2026-07-01", "acc": -0.5846418738365173, "rmse": 4.394941329956055, "bias": 3.1311287879943848, "rpss": -1.362969160079956}
 {"country": "ethiopia", "issuance": "2026-07-09", "method": "raw", "target_dekad": "2026-07-01", "acc": 0.02242577075958252, "rmse": 3.2046425342559814, "bias": 0.755348265171051, "rpss": -0.09745979309082031}
+{"country": "ethiopia", "issuance": "2026-05-28", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-05-28", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.30464839935302734, "rmse": 3.4688215255737305, "bias": 1.1126798391342163, "rpss": -0.03228914737701416}
+{"country": "ethiopia", "issuance": "2026-06-01", "method": "bcsd", "target_dekad": "2026-07-11", "acc": -0.061637312173843384, "rmse": 2.5257654190063477, "bias": 0.5371385216712952, "rpss": -0.1907562017440796}
+{"country": "ethiopia", "issuance": "2026-06-01", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.2942623198032379, "rmse": 2.293619394302368, "bias": 0.8043990731239319, "rpss": 0.1134951114654541}
+{"country": "ethiopia", "issuance": "2026-06-01", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-01", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.4866736829280853, "rmse": 4.8761210441589355, "bias": 3.137878179550171, "rpss": -1.0785834789276123}
+{"country": "ethiopia", "issuance": "2026-06-01", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.3315930962562561, "rmse": 3.602954626083374, "bias": 1.2603203058242798, "rpss": -0.13291490077972412}
+{"country": "ethiopia", "issuance": "2026-06-04", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-04", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.27156728506088257, "rmse": 3.3854737281799316, "bias": 1.0687263011932373, "rpss": -0.1323155164718628}
+{"country": "ethiopia", "issuance": "2026-06-08", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-08", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.2988206446170807, "rmse": 3.426950216293335, "bias": 0.9885954856872559, "rpss": -0.1377420425415039}
+{"country": "ethiopia", "issuance": "2026-06-11", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.1660657376050949, "rmse": 2.3763070106506348, "bias": 0.23324427008628845, "rpss": -0.27357685565948486}
+{"country": "ethiopia", "issuance": "2026-06-11", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.30273929238319397, "rmse": 2.1670711040496826, "bias": 0.2337692528963089, "rpss": 0.0532376766204834}
+{"country": "ethiopia", "issuance": "2026-06-11", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-11", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.4245535433292389, "rmse": 4.448159694671631, "bias": 2.807258367538452, "rpss": -0.7959808111190796}
+{"country": "ethiopia", "issuance": "2026-06-11", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.28576385974884033, "rmse": 3.478792428970337, "bias": 1.0324774980545044, "rpss": -0.1434953212738037}
+{"country": "ethiopia", "issuance": "2026-06-15", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.40984219312667847, "rmse": 2.1505143642425537, "bias": -0.02008352056145668, "rpss": -0.2261967658996582}
+{"country": "ethiopia", "issuance": "2026-06-15", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.36043742299079895, "rmse": 2.1427359580993652, "bias": 0.23504091799259186, "rpss": -0.23338961601257324}
+{"country": "ethiopia", "issuance": "2026-06-15", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-15", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.35675981640815735, "rmse": 4.0595598220825195, "bias": 2.5471479892730713, "rpss": -0.5925912857055664}
+{"country": "ethiopia", "issuance": "2026-06-15", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.2187218815088272, "rmse": 3.2879722118377686, "bias": 0.8755993843078613, "rpss": -0.057708024978637695}
+{"country": "ethiopia", "issuance": "2026-06-18", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-18", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.22068500518798828, "rmse": 3.297268867492676, "bias": 0.9526270627975464, "rpss": -0.09627354145050049}
+{"country": "ethiopia", "issuance": "2026-06-22", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-22", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.2282886505126953, "rmse": 3.2875702381134033, "bias": 1.0053355693817139, "rpss": -0.10571014881134033}
+{"country": "ethiopia", "issuance": "2026-06-25", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.5153106451034546, "rmse": 2.047055244445801, "bias": 0.10803128033876419, "rpss": -0.28665101528167725}
+{"country": "ethiopia", "issuance": "2026-06-25", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.534428060054779, "rmse": 1.9958854913711548, "bias": 0.5319837927818298, "rpss": 0.24193811416625977}
+{"country": "ethiopia", "issuance": "2026-06-25", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-25", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.28969988226890564, "rmse": 4.000021457672119, "bias": 2.484860897064209, "rpss": -0.6243554353713989}
+{"country": "ethiopia", "issuance": "2026-06-25", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.18444451689720154, "rmse": 3.2039570808410645, "bias": 0.9591692090034485, "rpss": -0.09723889827728271}
+{"country": "ethiopia", "issuance": "2026-06-29", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.47005632519721985, "rmse": 2.0825235843658447, "bias": 0.029355566948652267, "rpss": -0.23337745666503906}
+{"country": "ethiopia", "issuance": "2026-06-29", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.3938601613044739, "rmse": 2.1889405250549316, "bias": 0.7249575853347778, "rpss": 0.1463751196861267}
+{"country": "ethiopia", "issuance": "2026-06-29", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-06-29", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.33872345089912415, "rmse": 4.087454795837402, "bias": 2.597358226776123, "rpss": -0.6964617967605591}
+{"country": "ethiopia", "issuance": "2026-06-29", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.16181497275829315, "rmse": 3.2545108795166016, "bias": 0.9406262040138245, "rpss": -0.09745728969573975}
+{"country": "ethiopia", "issuance": "2026-07-02", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-02", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.1726749986410141, "rmse": 3.261305093765259, "bias": 0.9346341490745544, "rpss": -0.1129007339477539}
+{"country": "ethiopia", "issuance": "2026-07-06", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-06", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.17506438493728638, "rmse": 3.2997756004333496, "bias": 0.9101784825325012, "rpss": -0.13157892227172852}
+{"country": "ethiopia", "issuance": "2026-07-09", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.44599708914756775, "rmse": 2.147843837738037, "bias": -0.32523974776268005, "rpss": -0.3726353645324707}
+{"country": "ethiopia", "issuance": "2026-07-09", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.48196959495544434, "rmse": 2.021538734436035, "bias": 0.3991488814353943, "rpss": 0.1878376007080078}
+{"country": "ethiopia", "issuance": "2026-07-09", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-09", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.24662789702415466, "rmse": 3.4580814838409424, "bias": 2.074664831161499, "rpss": -0.49833524227142334}
+{"country": "ethiopia", "issuance": "2026-07-09", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.09020652621984482, "rmse": 3.134814739227295, "bias": 0.42844608426094055, "rpss": -0.10298192501068115}
+{"country": "ethiopia", "issuance": "2026-07-13", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.44304513931274414, "rmse": 2.140828847885132, "bias": -0.2978927195072174, "rpss": -0.49819958209991455}
+{"country": "ethiopia", "issuance": "2026-07-13", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.10697005689144135, "rmse": 2.399014472961426, "bias": 0.4677703380584717, "rpss": -0.476803183555603}
+{"country": "ethiopia", "issuance": "2026-07-13", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-13", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.16304561495780945, "rmse": 3.381840229034424, "bias": 2.0357649326324463, "rpss": -0.5962873697280884}
+{"country": "ethiopia", "issuance": "2026-07-13", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.12009957432746887, "rmse": 3.1419007778167725, "bias": 0.32615894079208374, "rpss": -0.2122044563293457}
+{"country": "ethiopia", "issuance": "2026-07-16", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-16", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.2777348756790161, "rmse": 3.494798421859741, "bias": 0.7804667353630066, "rpss": -0.5187146663665771}
+{"country": "ethiopia", "issuance": "2026-07-20", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 2.4297780990600586, "bias": 0.9261011481285095}
+{"country": "ethiopia", "issuance": "2026-07-20", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.41834819316864014, "rmse": 3.8910083770751953, "bias": -2.183178186416626, "rpss": -0.6113340854644775}

@@ -927,3 +927,56 @@
 {"country": "kenya", "issuance": "2026-07-09", "method": "climatology", "target_dekad": "2026-07-01", "acc": NaN, "rmse": 0.6694152355194092, "bias": 0.11876486986875534}
 {"country": "kenya", "issuance": "2026-07-09", "method": "rank-analog", "target_dekad": "2026-07-01", "acc": -0.4998246729373932, "rmse": 2.5354881286621094, "bias": 1.5100113153457642, "rpss": -0.5465599298477173}
 {"country": "kenya", "issuance": "2026-07-09", "method": "raw", "target_dekad": "2026-07-01", "acc": 0.5602161884307861, "rmse": 0.9875415563583374, "bias": -0.0163574181497097, "rpss": -0.2551306486129761}
+{"country": "kenya", "issuance": "2026-05-28", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-05-28", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.1824919432401657, "rmse": 1.2252395153045654, "bias": 0.04083256796002388, "rpss": -0.30619096755981445}
+{"country": "kenya", "issuance": "2026-06-01", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.3502865433692932, "rmse": 0.82078617811203, "bias": -0.06827941536903381, "rpss": -0.29639244079589844}
+{"country": "kenya", "issuance": "2026-06-01", "method": "cca", "target_dekad": "2026-07-11", "acc": -0.21972982585430145, "rmse": 1.0345302820205688, "bias": 0.1358896940946579, "rpss": -0.050795555114746094}
+{"country": "kenya", "issuance": "2026-06-01", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-01", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5428457260131836, "rmse": 2.201784133911133, "bias": 1.1955831050872803, "rpss": -0.44475018978118896}
+{"country": "kenya", "issuance": "2026-06-01", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.19705456495285034, "rmse": 1.2268784046173096, "bias": 0.09534572064876556, "rpss": -0.3240464925765991}
+{"country": "kenya", "issuance": "2026-06-04", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-04", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.25230491161346436, "rmse": 1.1734734773635864, "bias": 0.055856551975011826, "rpss": -0.3381171226501465}
+{"country": "kenya", "issuance": "2026-06-08", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-08", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.24854391813278198, "rmse": 1.1667447090148926, "bias": 0.04680456593632698, "rpss": -0.33265459537506104}
+{"country": "kenya", "issuance": "2026-06-11", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.3785383701324463, "rmse": 0.8270879983901978, "bias": -0.09495770186185837, "rpss": -0.34753453731536865}
+{"country": "kenya", "issuance": "2026-06-11", "method": "cca", "target_dekad": "2026-07-11", "acc": -0.011181516572833061, "rmse": 0.9190499782562256, "bias": 0.1554788053035736, "rpss": -0.055191993713378906}
+{"country": "kenya", "issuance": "2026-06-11", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-11", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5354833602905273, "rmse": 2.377455472946167, "bias": 1.300976276397705, "rpss": -0.5091785192489624}
+{"country": "kenya", "issuance": "2026-06-11", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.24454697966575623, "rmse": 1.1713825464248657, "bias": 0.0249068234115839, "rpss": -0.3597555160522461}
+{"country": "kenya", "issuance": "2026-06-15", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.42016348242759705, "rmse": 0.8148512840270996, "bias": -0.15911966562271118, "rpss": -0.46704721450805664}
+{"country": "kenya", "issuance": "2026-06-15", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.3666315972805023, "rmse": 0.9344666600227356, "bias": -0.2274242341518402, "rpss": -0.766364336013794}
+{"country": "kenya", "issuance": "2026-06-15", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-15", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5410960912704468, "rmse": 2.017735481262207, "bias": 1.0685254335403442, "rpss": -0.3231750726699829}
+{"country": "kenya", "issuance": "2026-06-15", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.3023138642311096, "rmse": 1.1160967350006104, "bias": -0.048989877104759216, "rpss": -0.33181071281433105}
+{"country": "kenya", "issuance": "2026-06-18", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-18", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.3232675790786743, "rmse": 1.0753469467163086, "bias": -0.0449446365237236, "rpss": -0.3152214288711548}
+{"country": "kenya", "issuance": "2026-06-22", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-22", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.2755681574344635, "rmse": 1.1209819316864014, "bias": 0.014668428339064121, "rpss": -0.3001251220703125}
+{"country": "kenya", "issuance": "2026-06-25", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.4474896490573883, "rmse": 0.7840803265571594, "bias": -0.0945599228143692, "rpss": -0.41462063789367676}
+{"country": "kenya", "issuance": "2026-06-25", "method": "cca", "target_dekad": "2026-07-11", "acc": -0.23829801380634308, "rmse": 1.1621253490447998, "bias": 0.38712984323501587, "rpss": 0.08651477098464966}
+{"country": "kenya", "issuance": "2026-06-25", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-25", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5318417549133301, "rmse": 2.028921365737915, "bias": 1.058812141418457, "rpss": -0.32029247283935547}
+{"country": "kenya", "issuance": "2026-06-25", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.27107706665992737, "rmse": 1.1122453212738037, "bias": 0.0002697604359127581, "rpss": -0.29556870460510254}
+{"country": "kenya", "issuance": "2026-06-29", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.47453930974006653, "rmse": 0.7759644389152527, "bias": -0.12165181338787079, "rpss": -0.35029709339141846}
+{"country": "kenya", "issuance": "2026-06-29", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.2751380205154419, "rmse": 1.0776140689849854, "bias": -0.23096613585948944, "rpss": -0.5831973552703857}
+{"country": "kenya", "issuance": "2026-06-29", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-06-29", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5372456908226013, "rmse": 2.334279775619507, "bias": 1.270870327949524, "rpss": -0.5477811098098755}
+{"country": "kenya", "issuance": "2026-06-29", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.2974650263786316, "rmse": 1.0858577489852905, "bias": -0.02052263543009758, "rpss": -0.32000505924224854}
+{"country": "kenya", "issuance": "2026-07-02", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-02", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.24233007431030273, "rmse": 1.1340197324752808, "bias": 0.015397677198052406, "rpss": -0.31362056732177734}
+{"country": "kenya", "issuance": "2026-07-06", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-06", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.4208175837993622, "rmse": 0.9945092797279358, "bias": -0.12845651805400848, "rpss": -0.30238020420074463}
+{"country": "kenya", "issuance": "2026-07-09", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.5716150999069214, "rmse": 0.7568156719207764, "bias": -0.24531269073486328, "rpss": -0.5328241586685181}
+{"country": "kenya", "issuance": "2026-07-09", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.37754184007644653, "rmse": 0.8612337708473206, "bias": -0.052967142313718796, "rpss": -0.32087862491607666}
+{"country": "kenya", "issuance": "2026-07-09", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-09", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.5451369285583496, "rmse": 1.7055548429489136, "bias": 0.8174464702606201, "rpss": -0.42413532733917236}
+{"country": "kenya", "issuance": "2026-07-09", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.5366005897521973, "rmse": 0.9574663639068604, "bias": -0.27403828501701355, "rpss": -0.3424922227859497}
+{"country": "kenya", "issuance": "2026-07-13", "method": "bcsd", "target_dekad": "2026-07-11", "acc": 0.5630362629890442, "rmse": 0.7800060510635376, "bias": -0.29888319969177246, "rpss": -0.7866846323013306}
+{"country": "kenya", "issuance": "2026-07-13", "method": "cca", "target_dekad": "2026-07-11", "acc": 0.09729649126529694, "rmse": 1.128222942352295, "bias": -0.034299466758966446, "rpss": -0.9205567836761475}
+{"country": "kenya", "issuance": "2026-07-13", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-13", "method": "rank-analog", "target_dekad": "2026-07-11", "acc": -0.2294638752937317, "rmse": 1.1115837097167969, "bias": 0.31182458996772766, "rpss": -0.1299266815185547}
+{"country": "kenya", "issuance": "2026-07-13", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.5651204586029053, "rmse": 0.9910852909088135, "bias": -0.4242272675037384, "rpss": -0.5708504915237427}
+{"country": "kenya", "issuance": "2026-07-16", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-16", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.4989106059074402, "rmse": 1.0275144577026367, "bias": -0.3655703365802765, "rpss": -0.7221847772598267}
+{"country": "kenya", "issuance": "2026-07-20", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 0.8855220675468445, "bias": 0.204969123005867}
+{"country": "kenya", "issuance": "2026-07-20", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.4932851791381836, "rmse": 1.1953637599945068, "bias": -0.5996387004852295, "rpss": -1.4162006378173828}
