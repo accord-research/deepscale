@@ -29,8 +29,27 @@
 | `ValueError` from `prediction_error_variance` | `cv_predictions` and `obs` must cover the same set of years |
 | `seasonal_mme` raises about years | Needs ≥ 5 intersection years across obs and all hindcasts |
 | Whole regions NaN in tercile output | Degenerate boundaries (t33 == t67, e.g. dry cells) or uncalibratable cells (eReg < 3 finite years; logit < `min_years`) — masked by design |
+| `ValueError`: crpss expects a Gaussian forecast with 'mu' and 'sigma' | The `crpss` metric takes an `xr.Dataset` of anomaly `mu`/`sigma`, not a field or tercile array — see `metrics-and-terciles.md` |
+| `AttributeError` on `ds.complete`, `ds.frequency_below`, `ds.seasonal_stack`, `ds.analogs_where`, ... | Code written against an unmerged experiment branch — see "Not in this package" below |
 
 If a "wrong result" (rather than an error) is the problem, first check the discipline rules in `metrics-and-terciles.md` — leakage and metric/forecast mismatches produce plausible-looking but invalid skill numbers.
+
+## Not in this package (despite appearing in org experiment code)
+
+Code in the `accord-research/experiments` repo (notably `chc_ethiopia`) runs against unmerged `_chc` feature branches. The following symbols do **not** exist on released/main deepscale — do not call or document them as if they do:
+
+- SMPG/season-positioning verbs: `seasonal_stack`, `percentile_of`, `rank_of_record`, `accumulate`, `complete`, `frequency_below`
+- Analog selection: `analogs_where`, `analogs_from_index`, `AnalogSet`
+- Series calibration: top-level `quantile_map`, `error_bounds` (the gridded `qm` *method* does exist)
+- Plotting: `plot_field_map`, `plot_choropleth`, `plot_accumulation_scenarios`, `plot_index_scatter`, `natural_earth_borders`
+- `Index` extensions: `transform=`/`weights=`/`baseline=` kwargs and named indices beyond `wvg`/`wvg2`/`nino34`/`nino4` (no `roni`, `dmi`, `wio`, ...). Main's `Index` always z-standardizes and uses unweighted box means; `Index.custom` takes only `name`/`regions`/`combine`.
+- On the rosetta side: `rosetta.zonal` (polygon reduction) is likewise branch-only.
+
+If these land on main later, document them then (AGENTS.md sync rules apply); until then, replicate the behavior with plain xarray (e.g. `groupby`/quantile arithmetic for analog composites, rioxarray + geopandas for zonal stats).
+
+## Known convention caveats
+
+- **Empirical QM convention:** deepscale's empirical `qm` maps values directly through sorted historical columns (direct-CDF), whereas xsdba-style implementations apply *additive adjustment factors* (`ref_q − hist_q` interpolated). The conventions genuinely differ and direct-CDF is sample-hungry — with short training windows the parametric variant (`variant="parametric"`) or a longer window closes most of the gap. The default is kept for backward stability.
 
 ## Operational scripts (where to look; not covered in depth by this skill)
 

@@ -29,6 +29,30 @@ Method base classes (`deepscale.methods.base`): `MethodBase` (`fit`, `predict`, 
 
 `ereg` and `logit` are multi-model: dict predictors are calibrated per model, averaged (skipna), and renormalized to the probability simplex. `smoothed_regression` takes a single ensemble hindcast (not a dict).
 
+## Smoothed seasonal regression — the function layer (Kharin et al. 2017)
+
+The `smoothed_regression` calibrator above is built from public functions in `deepscale.methods.smoothed_regression` — reach for them directly when you need a manual honest-CV loop (the calibrator is fit-and-apply on the hindcast; CV scoring is the caller's concern) or custom scoring. All functions expect a **rectangular `(season, year, ...)` cube** — build it by intersecting the available years across all seasons (wraparound seasons like DJF otherwise NaN-pad a union of years).
+
+**Deterministic** (exported at top level): `ds.seasonal_coefficients(predictor_hindcast, obs, temporal_sigma=None|float|"constant")` → slope `(season, lat, lon)`; see `api.md`.
+
+**Probabilistic** (mean *and* spread scaling; numpy in/out):
+
+```python
+from deepscale.methods import smoothed_regression as sr
+
+shape, scale = sr.fit_gamma(x)                    # method-of-moments gamma fit (positive values)
+x_norm = sr.gamma_to_normal(x, shape, scale)      # make skewed rainfall ~normal before regression
+a, b = sr.fit_ab_field(mu_f, sigma_f, o, constrained=True)  # (season,year,lat,lon) -> a,b (season,lat,lon)
+a_s, b_s = sr.smooth_ab(a, b, temporal_sigma)     # None | float (cyclic Gaussian) | "constant" (mean over seasons)
+probs = sr.normal_category_probs(a_s*mu, b_s*sig, t_lo, t_hi)  # (3, ...) below/near/above
+```
+
+- `fit_ab(mu_f, sigma_f, o, constrained=True)`: `a = Cov(mu_f,o)/Var(mu_f)`, `b` sized so the calibrated variance matches `Var(o)`; `constrained=False` minimizes mean Gaussian CRPS over `(a, b)` instead (Nelder–Mead). Returns NaN for cells with < 3 finite years or degenerate variance.
+- `smooth_ab(..., "constant")` is the **mean over seasons** of the per-season coefficients — different from the deterministic `seasonal_coefficients(..., "constant")`, which is a pooled regression over the underlying data.
+- For rainfall, run the whole pipeline in gamma→normal space, and mask cells too dry for a gamma fit (e.g. climatology < 0.5 mm/day) — a gamma distribution is undefined where it never rains.
+- Score with `deepscale.metrics.crpss.{crps_normal, crps_climatology, crpss}` or the registered `crpss` metric (see `metrics-and-terciles.md`).
+- Runnable: [../examples/smoothed_calibration.py](../examples/smoothed_calibration.py).
+
 ## Ensemble strategies (`strategy=` to `ensemble()`)
 
 | Name | Class | Notes |

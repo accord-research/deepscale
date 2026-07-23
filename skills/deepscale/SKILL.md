@@ -77,7 +77,7 @@ result.tercile_forecast; result.skill_report.scores; result.metadata
 | `ds.prediction_error_variance(cv_preds, obs)` | Per-cell PEV from CV residuals | `(lat,lon)` |
 | `ds.flex_forecast(det_fcst, pev, obs, threshold)` | Exceedance probability P(Y > threshold) | `FlexForecastResult` |
 
-Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-analog`, `corrdiff` (GPU). Ensemble strategies: `uniform`, `skill_weighted`, `bma`, `drop_worst`. CV schemes: `loyo`, `lko`, `blocked`, `expanding`. Metrics: `rpss`, `roc`, `groc`, `reliability`, `hss`, `pearson_r`, `spearman`, `2afc`, `rmse`, `msss`, `crpss`, `spread_error_ratio`, `spread_error_correlation` (+ presets `"svslrf"`, `"all"`). Full parameter tables: [references/methods.md](references/methods.md), [references/metrics-and-terciles.md](references/metrics-and-terciles.md).
+Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-analog`, `corrdiff` (GPU). Ensemble strategies: `uniform`, `skill_weighted`, `bma`, `drop_worst`. CV schemes: `loyo`, `lko`, `blocked`, `expanding`. Metrics: `rpss`, `roc`, `groc`, `reliability`, `hss`, `pearson_r`, `spearman`, `2afc`, `rmse`, `msss`, `crpss`, `spread_error_ratio`, `spread_error_correlation` (+ presets `"svslrf"`, `"all"`). Also exported: `ds.seasonal_coefficients` — the fitted Kharin-2017 seasonally-smoothed regression coefficient field behind the `smoothed_regression` calibrator (see [references/methods.md](references/methods.md)). Full parameter tables: [references/methods.md](references/methods.md), [references/metrics-and-terciles.md](references/metrics-and-terciles.md).
 
 ## Critical discipline rules
 
@@ -87,6 +87,7 @@ Downscale methods: `bcsd`, `cca`, `qm`, `dqm`, `delta`, `climatology`, `rank-ana
 4. **Don't nest `optimize()` inside a CV loop** — double CV plus non-consecutive inner years breaks the CV schemes. Use `train()` + `.predict()` in manual loops (see quick start).
 5. **`primary_metric` must be a leaf metric** — `roc_an`, not `roc` (which expands to a dict).
 6. **DL methods** (`requires_training=True`) refuse inline fitting: `ds.train(name, ..., save_to=path)` then `ds.downscale(..., weights_path=path)`.
+7. **Mask discipline when comparing forecasts:** RPSS masks its climatology reference only where *obs* is NaN, so forecasts with different NaN footprints are silently scored over different cell sets (a uniform-1/3 forecast has scored +0.26 this way). Apply one common valid mask to every forecast and the obs before scoring, and self-check that a uniform `[1/3,1/3,1/3]` forecast scores ≈ 0 — see [references/metrics-and-terciles.md](references/metrics-and-terciles.md).
 
 ## Getting data in (rosetta)
 
@@ -118,6 +119,7 @@ obs = rosetta.fetch("obs/era5", "precip", region=[-5, 15, 33, 48],
 - [examples/seasonal_mme_pipeline.py](examples/seasonal_mme_pipeline.py) — one-call multi-model MME with `seasonal_mme`
 - [examples/calibration.py](examples/calibration.py) — eReg multi-model calibration, logistic/WVG index calibration, and season-aware smoothed_regression (deterministic + tercile)
 - [examples/ensemble_and_reporting.py](examples/ensemble_and_reporting.py) — strategies, safeguards, skill comparison, plots
+- [examples/smoothed_calibration.py](examples/smoothed_calibration.py) — Kharin-2017 function layer in a manual honest-CV loop: gamma→normal, fit/smooth a·b, CRPSS
 
 ## Reference files
 
@@ -125,4 +127,4 @@ obs = rosetta.fetch("obs/era5", "precip", region=[-5, 15, 33, 48],
 - [references/methods.md](references/methods.md) — downscale methods, calibrators, ensemble strategies, CV schemes, registries
 - [references/metrics-and-terciles.md](references/metrics-and-terciles.md) — every metric's semantics + tercile conversion discipline
 - [references/plotting-reporting.md](references/plotting-reporting.md) — which plot for which artifact, forecast/skill maps, diagrams, SVSLRF PDFs, GeoTIFF/NetCDF export, headless figure handling
-- [references/troubleshooting.md](references/troubleshooting.md) — error → cause table, environment/install setup, test markers, operational scripts
+- [references/troubleshooting.md](references/troubleshooting.md) — error → cause table, environment/install setup, test markers, operational scripts, symbols that look like deepscale but are NOT in the package

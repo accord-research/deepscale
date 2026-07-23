@@ -64,6 +64,13 @@ Helper: `deepscale.metrics.spread_error.spread_error_diagnostics(forecast, obs, 
 - `metrics="svslrf"` → `["rpss", "roc", "reliability"]` (the WMO-SVSLRF mandatory triplet).
 - `metrics="all"` → every registered metric; ones that raise `ValueError` on incompatible shapes are skipped with a `RuntimeWarning`.
 
+### Mask discipline and self-checks (comparing several forecasts)
+
+RPSS masks its climatology reference where **obs** is NaN — not where the *forecast* is NaN. When forecasts with different NaN footprints (different models, methods, or regrid artifacts) are scored against the same obs, each one is silently compared over a different cell set, and the numbers drift: in one real case a uniform-1/3 (zero-information) forecast scored RPSS **+0.26** purely from mask mismatch. Two rules, learned the hard way:
+
+1. **One common valid mask before scoring.** Build it once — cells where the tercile probs are finite and sum to ~1 in *every* forecast being compared, intersected with cells where the obs tercile boundaries are defined — and `.where(mask)` every forecast *and* the obs before any `skill()` call.
+2. **Self-check every scoring run.** A uniform `[1/3, 1/3, 1/3]` forecast must score RPSS ≈ 0 (assert `|RPSS| < 0.02`), and a perfect forecast ≈ 1. If the climatology check fails, the masks are mismatched — fix that before trusting any other number.
+
 ### Pairing rule
 
 Score tercile metrics on the tercile forecast and continuous metrics on the deterministic ensemble — two separate `skill()` calls:

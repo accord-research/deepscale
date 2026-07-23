@@ -1,6 +1,6 @@
 # DeepScale API reference
 
-Import name: `deepscale` (distribution: `accord-deepscale`). `__all__`: `downscale, train, optimize, ensemble, skill, SkillReport, skill_compare, ComparisonReport, prediction_error_variance, flex_forecast, FlexForecastResult, seasonal_mme, SeasonalMMEResult, Index, calibrate, LogitConfig, write_terciles, tercile_mae, plot_terciles, plot_field, plot_tercile_comparison`. Importing the package registers all methods/metrics/strategies.
+Import name: `deepscale` (distribution: `accord-deepscale`). `__all__`: `downscale, train, optimize, ensemble, skill, SkillReport, skill_compare, ComparisonReport, prediction_error_variance, flex_forecast, FlexForecastResult, seasonal_mme, SeasonalMMEResult, Index, calibrate, LogitConfig, seasonal_coefficients, write_terciles, tercile_mae, plot_terciles, plot_field, plot_tercile_comparison`. Importing the package registers all methods/metrics/strategies.
 
 ## `downscale()`
 
@@ -107,6 +107,7 @@ def skill(forecast, obs, metrics=None, spatial=False, **kwargs) -> SkillReport
 
 - `metrics`: `None` (→ `["rpss"]`), a name, a preset (`"svslrf"` → rpss/roc/reliability; `"all"` → every registered metric, shape-incompatible ones skipped with `RuntimeWarning`), or a list.
 - `spatial=True`: per-cell maps in `.spatial`, scalar means in `.scores`.
+- Extra `**kwargs` are forwarded to every metric's `compute()` — this is how per-metric options like `loo_boundaries=True`, `cv_window=3`, `bounded=True` (RPSS) or `n_bins` (reliability) are passed through `skill()`.
 
 ```python
 @dataclass
@@ -203,6 +204,14 @@ class Index:
 
 Reduces an SST field to a scalar index series. WVG (Western-V Gradient, Funk et al.), 3-box: `z(nino34) - (z(wnp) + z(wep) + z(wsp)) / 3`. Standardization uses the `climatology` reference's mean/std — pass the hindcast SST as `climatology` when reducing a forecast year so both share a scale. Named boxes (lat_s, lat_n, lon_w, lon_e; 0-360 lon, `reduce` handles either convention): nino34 `(-5,5,190,240)`, nino4 `(-5,5,160,210)`, wep `(-15,20,120,160)`, wnp `(20,35,160,210)`, wsp `(-30,-15,155,210)`. Regions accept bboxes; shapefile/geometry regions require rosetta.
 
+## `seasonal_coefficients()` (Kharin 2017 smoothed regression slopes)
+
+```python
+def seasonal_coefficients(predictor_hindcast, obs, temporal_sigma=None) -> xr.DataArray
+```
+
+Per-gridpoint ensemble-mean regression slope `a = Cov(Fbar, O)/Var(Fbar)` as a function of the seasonal cycle. Inputs `(season, year, member, lat, lon)` / `(season, year, lat, lon)` on the same grid → coefficient `(season, lat, lon)`. `temporal_sigma`: `None` (per-season, unsmoothed), a float (cyclic Gaussian smoothing across the season axis), or `"constant"` (a single pooled time-invariant slope — a pooled regression over all seasons, not the large-sigma limit). The probabilistic companion functions live in `deepscale.methods.smoothed_regression` — see `references/methods.md`.
+
 ## IO helpers
 
 ```python
@@ -219,6 +228,7 @@ def tercile_mae(probs, reference) -> float
 - `deepscale.registry.{register_method, register_calibrator, register_metric, register_strategy, get_method, get_metric, get_strategy, ...}` — extension points.
 - `deepscale.methods.base.{MethodBase, ProbabilisticMethodBase}` — subclass + `register_method` to add a method; `ProbabilisticMethodBase` adds `predict_distribution()`.
 - `deepscale.logistic.logistic_forecast(...)` — low-level per-cell logistic engine.
-- `deepscale.seasonal_coefficients(hindcast, obs, temporal_sigma=None)` — the fitted, season-smoothed `smoothed_regression` coefficient field `(season, lat, lon)`, for inspection or plotting. See `references/methods.md`.
 - `deepscale.metrics.spread_error.spread_error_diagnostics(forecast, obs, *, spatial=False)`.
+- `deepscale.methods.smoothed_regression.{fit_gamma, gamma_to_normal, normal_to_gamma, fit_ab, fit_ab_field, smooth_ab, normal_category_probs}` — the Kharin-2017 probabilistic calibration pipeline; see `references/methods.md`.
+- `deepscale.metrics.crpss.{crps_normal, crps_climatology, crpss}` — Gaussian CRPS building blocks (ndarray in/out) behind the `crpss` metric.
 - `deepscale.plotting.*` — see `references/plotting-reporting.md`.
