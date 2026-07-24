@@ -84,3 +84,29 @@ report_det = ds.skill(cv_continuous, obs,
                                "spread_error_ratio", "spread_error_correlation"],
                       spatial=True)
 ```
+
+## Significance and multiple-comparison control
+
+Top-level exports for deciding whether a discovered predictor–predictand relationship is more than the best of a large search — e.g. screening many candidate teleconnection indices against a rainfall series. These are plain functions on paired 1-D series (not registered `MetricBase` scores).
+
+**Leave-one-out CV helpers** (`deepscale.metrics.cross_validation`, re-exported at top level except `leverage`):
+
+```python
+ds.loo_predict(x, y)                    # closed-form LOO predictions of y ~ x (Allen's PRESS identity)
+ds.loo_corr(x, y, *, min_finite=5)      # corr(LOO predictions, y): 1 perfect, ~0 none, NEGATIVE for chance
+deepscale.metrics.leverage(x)           # per-point leverage h_i = 1/n + (x-x̄)²/Sxx (module-qualified only)
+```
+
+`loo_corr` is *negative* for a no-skill predictor (LOO predictions of a near-zero relationship anti-correlate with the target). This is exactly why the permutation test below defaults to a **one-sided upper tail**. Each returns NaN on a degenerate (zero-variance) fit; `loo_corr` also NaNs with fewer than `min_finite` finite pairs or a constant prediction.
+
+**Significance** (`deepscale.metrics.significance`, re-exported at top level):
+
+```python
+ds.permutation_test(x, y, *, statistic=loo_corr, alternative="greater", n=5000, rng=None)
+    -> (observed_statistic, p_value)
+ds.fdr(pvalues, *, method="bh") -> array of q-values (same shape as input)
+```
+
+`permutation_test` holds `x` fixed, shuffles `y` `n` times, and returns the fraction of shuffles at least as extreme as the observed statistic, with the conventional `+1` in numerator and denominator so it is never exactly zero (`p_value` is NaN if the observed statistic is not finite). `statistic` is any `f(x, y) -> float`; the default `loo_corr` is why `alternative` defaults to `"greater"` (`"less"` / `"two-sided"` also accepted — but a two-sided `|stat|` test is *invalid* for a LOO skill statistic whose null is biased negative). `rng` is a seed or `numpy.random.Generator` (share one generator across calls for a stable draw sequence).
+
+`fdr` returns Benjamini–Hochberg q-values (`q_i` = smallest FDR at which test `i` is rejected). NaN p-values are excluded from the test count and returned as NaN, so a ragged leaderboard passes through directly. Only `method="bh"` is implemented.

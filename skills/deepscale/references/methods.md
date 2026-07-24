@@ -19,6 +19,8 @@ Everything here is selected by name string via registries (`deepscale/registry.p
 
 CCA numerics intentionally match CPT Fortran 17.8.3: standardize before SVD, empirical tercile boundaries with `rndx = n*p + 0.5`, leverage `= 1/n + Σ prjc²`, prediction-error variance `= s2_cv·(1+h)`, Student-t terciles with `dofr = n − n_modes − 1`. `scripts/reproduce.py` reproduces PyCPT step by step (r ≈ 0.9996 on predictions); the `agreement` pytest marker gates the parity suite. Changes to CCA must preserve this parity.
 
+Near-rank-deficient predictors are now guarded: the internal EOF projection drops degenerate singular-value modes (the same `rcond`-style cutoff `numpy.linalg.pinv` uses) and `fit()` raises on a rank-0 predictor with no interannual variance. This fixes a pathology where one ill-conditioned model produced ~1e91 leverages that, when averaged across a pooled MME, collapsed every tercile forecast to `[0.5, 0, 0.5]` (GROC exactly 0.500). CPT parity is unaffected — on well-conditioned inputs the projection is bit-identical.
+
 Method base classes (`deepscale.methods.base`): `MethodBase` (`fit`, `predict`, `save`/`load`, `is_trained`, `requires_training`) and `ProbabilisticMethodBase` (adds `predict_distribution()`, consumed by `downscale(output_type="tercile")` via counting). Register your own with `deepscale.registry.register_method("name")`.
 
 ## Calibrators (`method=` to `calibrate()`)
@@ -72,6 +74,38 @@ Defaults `{"nested_cv": True, "shrinkage": 0.5, "min_effective_n": 3, "gate": Tr
 - `shrinkage` — λ-shrink optimized weights toward uniform.
 - `min_effective_n` — floor on effective member count (`1/Σw²`).
 - `gate` — accept optimized weights only if they beat uniform under CV; otherwise fall back to uniform with a `RuntimeWarning` (`EnsembleResult.gate_passed=False`).
+
+## Pooling per-model ensembles into one predictor (`pool_ensembles`)
+
+```python
+ds.pool_ensembles(arrays, *, member_dim="member", regrid_to="first", align_years=True)
+    -> (year, member, lat, lon)
+```
+
+Concatenate several per-model ensembles into one multi-model predictor cube for `ds.optimize` (`seasonal_mme` pools internally from its `predictor_tracks`, so it does not need this). Each input carries its own `member_dim`; members are renumbered to a single contiguous range so they stay unique across models, grids are linearly interpolated onto a reference (`regrid_to="first"` uses the first array's grid; a DataArray or `(lat, lon)` sets it explicitly; a no-op where the grid already matches), the shared years are intersected (`align_years=True`), and the arrays are concatenated along `member_dim`. `None` entries are skipped; an empty/all-None input or a year-disjoint set raises `ValueError`.
+
+## Combining tercile forecasts and skill masking (`deepscale.combine`)
+
+Top-level exports `combine_terciles`, `mask_by_skill`, `dry_mask` — the generic "combine objective outlooks" and "only issue where skilful / where it rains" post-processing steps.
+
+```python
+ds.combine_terciles(components, weights=None, *, regrid_to=None, renormalize=True)
+    -> (tercile, lat, lon)
+```
+
+NaN-skipping weighted mean of several `(tercile, lat, lon)` fractional-probability maps (`tercile=[0,1,2]` = below/normal/above) into one simplex-preserving outlook. `components` is a sequence or a `{name: DataArray}` mapping (≥ 1 component). `weights` is a sequence or mapping (need not sum to 1; normalised; must be non-negative and not all zero); default is equal weight (the WMO-style unweighted average). `regrid_to` (DataArray or `(lat, lon)`) sets the target grid; default is the first component's grid (others linearly interpolated only if they differ). The per-cell average skips NaN components (weights renormalised over present components), so a cell present in only some components still combines; `renormalize=True` divides by the tercile sum so every valid cell is a proper 3-way simplex. Hierarchy composes for free: `combine_terciles([exp1_mme, exp2_mme, exp3_mme])` is ACMAD's component-equal objective, where each `exp*_mme` is itself a `seasonal_mme` or nested `combine_terciles` output.
+
+```python
+ds.mask_by_skill(forecast, skill, *, threshold, keep="above")
+```
+
+Blank (set NaN) the cells of any gridded `forecast` (tercile probs or a continuous field) where a per-cell `skill` field fails `threshold`. `keep` ∈ `"above"` (keep skill strictly above) / `"below"`. NaN skill is always blanked. `threshold=None`, or `≤ 0` with `keep="above"`, is a no-op (the common "skill-mask off" config). Downstream, `combine_terciles` and plotters simply omit the NaN cells.
+
+```python
+ds.dry_mask(climatology, *, threshold, like=None)   # -> bool DataArray, True where too dry to forecast
+```
+
+Boolean mask, True where a per-cell climatological total (`climatology`, a lat/lon grid; how it was accumulated is the caller's concern) is below `threshold`. `like` (DataArray or `(lat, lon)`) regrids the mask onto that grid (0.5 cut on the interpolated float mask).
 
 ## Cross-validation schemes (`cv=` to `optimize()` / `ensemble()` / `seasonal_mme()`)
 
