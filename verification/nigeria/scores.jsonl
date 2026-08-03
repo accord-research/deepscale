@@ -980,3 +980,59 @@
 {"country": "nigeria", "issuance": "2026-07-16", "method": "raw", "target_dekad": "2026-07-11", "acc": 0.10343682765960693, "rmse": 6.497005462646484, "bias": 2.235912561416626, "rpss": -0.5795888900756836}
 {"country": "nigeria", "issuance": "2026-07-20", "method": "climatology", "target_dekad": "2026-07-11", "acc": NaN, "rmse": 3.9185879230499268, "bias": 0.8148709535598755}
 {"country": "nigeria", "issuance": "2026-07-20", "method": "raw", "target_dekad": "2026-07-11", "acc": -0.2415839582681656, "rmse": 8.460138320922852, "bias": -6.551641941070557, "rpss": -0.41332364082336426}
+{"country": "nigeria", "issuance": "2026-06-08", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-08", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.07305870950222015, "rmse": 5.528351306915283, "bias": -1.711923360824585, "rpss": -0.19862902164459229}
+{"country": "nigeria", "issuance": "2026-06-11", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.15264680981636047, "rmse": 3.5076637268066406, "bias": -0.6951535940170288, "rpss": -0.04947161674499512}
+{"country": "nigeria", "issuance": "2026-06-11", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.1485585868358612, "rmse": 4.458505630493164, "bias": -0.5773656964302063, "rpss": -0.09761404991149902}
+{"country": "nigeria", "issuance": "2026-06-11", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-11", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.2995906174182892, "rmse": 6.027996063232422, "bias": 3.6602232456207275, "rpss": -0.6456952095031738}
+{"country": "nigeria", "issuance": "2026-06-11", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.0970354750752449, "rmse": 5.543344020843506, "bias": -1.396063208580017, "rpss": -0.2054060697555542}
+{"country": "nigeria", "issuance": "2026-06-15", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.14025767147541046, "rmse": 3.513619899749756, "bias": -0.3504604995250702, "rpss": -0.04907655715942383}
+{"country": "nigeria", "issuance": "2026-06-15", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.1150173544883728, "rmse": 4.6518073081970215, "bias": -0.38692572712898254, "rpss": -0.19607770442962646}
+{"country": "nigeria", "issuance": "2026-06-15", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-15", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.29512375593185425, "rmse": 6.26256799697876, "bias": 3.9470953941345215, "rpss": -0.718361496925354}
+{"country": "nigeria", "issuance": "2026-06-15", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.11232587695121765, "rmse": 5.622650623321533, "bias": -1.5277968645095825, "rpss": -0.21730852127075195}
+{"country": "nigeria", "issuance": "2026-06-18", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-18", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.12252890318632126, "rmse": 5.756662368774414, "bias": -1.6047031879425049, "rpss": -0.22198987007141113}
+{"country": "nigeria", "issuance": "2026-06-22", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-22", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.1442844718694687, "rmse": 5.820507049560547, "bias": -1.6130627393722534, "rpss": -0.24190568923950195}
+{"country": "nigeria", "issuance": "2026-06-25", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.1651308536529541, "rmse": 3.520535945892334, "bias": -0.4895709156990051, "rpss": -0.06799674034118652}
+{"country": "nigeria", "issuance": "2026-06-25", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.12100937217473984, "rmse": 4.597508430480957, "bias": -1.1087079048156738, "rpss": -0.09275102615356445}
+{"country": "nigeria", "issuance": "2026-06-25", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-25", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.29439571499824524, "rmse": 6.241971015930176, "bias": 3.939920663833618, "rpss": -0.7283631563186646}
+{"country": "nigeria", "issuance": "2026-06-25", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.11322779953479767, "rmse": 5.651768207550049, "bias": -1.595903754234314, "rpss": -0.19230639934539795}
+{"country": "nigeria", "issuance": "2026-06-29", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.13649122416973114, "rmse": 3.584378480911255, "bias": -0.5321682691574097, "rpss": -0.1216045618057251}
+{"country": "nigeria", "issuance": "2026-06-29", "method": "cca", "target_dekad": "2026-07-21", "acc": -0.0867585763335228, "rmse": 4.993485927581787, "bias": -2.0607964992523193, "rpss": -0.10361301898956299}
+{"country": "nigeria", "issuance": "2026-06-29", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-06-29", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.30005958676338196, "rmse": 6.296180248260498, "bias": 3.998673915863037, "rpss": -0.7604135274887085}
+{"country": "nigeria", "issuance": "2026-06-29", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.12528511881828308, "rmse": 5.656485080718994, "bias": -1.6699572801589966, "rpss": -0.2244715690612793}
+{"country": "nigeria", "issuance": "2026-07-02", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-02", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.06459695100784302, "rmse": 5.503593444824219, "bias": -1.2930545806884766, "rpss": -0.1818903684616089}
+{"country": "nigeria", "issuance": "2026-07-06", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-06", "method": "raw", "target_dekad": "2026-07-21", "acc": 0.03325917199254036, "rmse": 5.264384746551514, "bias": -1.04537034034729, "rpss": -0.146203875541687}
+{"country": "nigeria", "issuance": "2026-07-09", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.1856144815683365, "rmse": 3.5275440216064453, "bias": -0.15079842507839203, "rpss": -0.057927489280700684}
+{"country": "nigeria", "issuance": "2026-07-09", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.18285807967185974, "rmse": 4.59765625, "bias": -1.2274779081344604, "rpss": -0.12141859531402588}
+{"country": "nigeria", "issuance": "2026-07-09", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-09", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.30324819684028625, "rmse": 6.43790864944458, "bias": 4.140320301055908, "rpss": -0.769797682762146}
+{"country": "nigeria", "issuance": "2026-07-09", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.06418202817440033, "rmse": 5.541289329528809, "bias": -0.9595842361450195, "rpss": -0.21013522148132324}
+{"country": "nigeria", "issuance": "2026-07-13", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.3314836323261261, "rmse": 3.2457849979400635, "bias": -0.07798376679420471, "rpss": 0.04125523567199707}
+{"country": "nigeria", "issuance": "2026-07-13", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.011714297346770763, "rmse": 4.715531826019287, "bias": -1.452699065208435, "rpss": -0.0542452335357666}
+{"country": "nigeria", "issuance": "2026-07-13", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-13", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.2991124987602234, "rmse": 6.351573944091797, "bias": 4.0723772048950195, "rpss": -0.7833366394042969}
+{"country": "nigeria", "issuance": "2026-07-13", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.0767325833439827, "rmse": 5.666413307189941, "bias": -0.7364763617515564, "rpss": -0.2113093137741089}
+{"country": "nigeria", "issuance": "2026-07-16", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-16", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.048917707055807114, "rmse": 5.547039031982422, "bias": -0.8674214482307434, "rpss": -0.161590576171875}
+{"country": "nigeria", "issuance": "2026-07-20", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-20", "method": "raw", "target_dekad": "2026-07-21", "acc": 0.07918314635753632, "rmse": 5.307494163513184, "bias": -1.680014967918396, "rpss": -0.20650577545166016}
+{"country": "nigeria", "issuance": "2026-07-23", "method": "bcsd", "target_dekad": "2026-07-21", "acc": 0.1772184520959854, "rmse": 3.6387410163879395, "bias": -1.1725046634674072, "rpss": -0.13269460201263428}
+{"country": "nigeria", "issuance": "2026-07-23", "method": "cca", "target_dekad": "2026-07-21", "acc": 0.15684428811073303, "rmse": 4.603603363037109, "bias": -0.6760630011558533, "rpss": -0.24468350410461426}
+{"country": "nigeria", "issuance": "2026-07-23", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-23", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.3074081242084503, "rmse": 6.133551120758057, "bias": 3.7845053672790527, "rpss": -0.7221547365188599}
+{"country": "nigeria", "issuance": "2026-07-23", "method": "raw", "target_dekad": "2026-07-21", "acc": 0.1746818721294403, "rmse": 5.107553005218506, "bias": -1.2729554176330566, "rpss": -0.18839585781097412}
+{"country": "nigeria", "issuance": "2026-07-27", "method": "bcsd", "target_dekad": "2026-07-21", "acc": -0.02517463080585003, "rmse": 3.6683380603790283, "bias": 0.16207894682884216, "rpss": -0.24532461166381836}
+{"country": "nigeria", "issuance": "2026-07-27", "method": "cca", "target_dekad": "2026-07-21", "acc": -0.13560126721858978, "rmse": 8.149673461914062, "bias": -4.999168872833252, "rpss": -0.8980988264083862}
+{"country": "nigeria", "issuance": "2026-07-27", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-27", "method": "rank-analog", "target_dekad": "2026-07-21", "acc": 0.3017703890800476, "rmse": 6.512413024902344, "bias": 4.243296146392822, "rpss": -0.8169772624969482}
+{"country": "nigeria", "issuance": "2026-07-27", "method": "raw", "target_dekad": "2026-07-21", "acc": 0.30410078167915344, "rmse": 5.365659236907959, "bias": 1.45352303981781, "rpss": -0.2617419958114624}
+{"country": "nigeria", "issuance": "2026-07-30", "method": "climatology", "target_dekad": "2026-07-21", "acc": NaN, "rmse": 4.611273288726807, "bias": -1.230242133140564}
+{"country": "nigeria", "issuance": "2026-07-30", "method": "raw", "target_dekad": "2026-07-21", "acc": -0.05929092690348625, "rmse": 6.065710544586182, "bias": -2.876934766769409, "rpss": -0.3816114664077759}
